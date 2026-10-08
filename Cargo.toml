@@ -1,17 +1,169 @@
 [workspace]
 resolver = "3"
+exclude = []
+members = [
+  ".",
+  "crates/teal-bench",
+  "crates/teal-workbench-automation",
+  "crates/teal-workbench-core",
+  "crates/teal-workbench-services",
+  "crates/teal-web",
+  "crates/teal-browser",
+  "crates/teal-computer",
+  "crates/teal-workspace",
+  "crates/teal-fmt",
+  "crates/teal-lsp",
+  "crates/teal-dap",
+  "crates/teal-lsp-client",
+  "crates/teal-text",
+  "tools/teal-xtask",
+]
 
-[package]
-name = "teal"
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.98.1"
 license = "MIT"
-readme = "README.md"
-description = "Teal 工作台根命令派发"
+
+[workspace.dependencies]
+age = "0.12.1"
+arboard = { version = "3.6.1", default-features = false }
+bincode = { version = "2", default-features = false, features = ["std", "serde"] }
+base64 = "0.22"
+chrono = { version = "0.4.43", features = ["serde"] }
+chumsky = { version = "0.13", default-features = false, features = ["std"] }
+clap = { version = "4", features = ["derive"] }
+crc32fast = "1"
+crypto_box = { version = "0.9.1", features = ["seal"] }
+crossterm = { version = "0.29", features = ["event-stream"] }
+directories = "6"
+ed25519-dalek = { version = "2.2.0", features = ["pkcs8"] }
+encoding_rs = "0.8"
+flate2 = "1"
+futures-util = "0.3"
+getrandom = "0.3"
+hmac = "0.12.1"
+ignore = "0.4"
+keyring = { version = "3.6", default-features = false }
+jsonwebtoken = "9.3.1"
+libffi = "5"
+libloading = "0.9"
+logos = "0.16"
+memchr = "2"
+miette = { version = "7", default-features = false, features = ["derive"] }
+opentelemetry = { version = "0.32", features = ["trace", "metrics", "logs"] }
+opentelemetry_sdk = { version = "0.32", features = ["trace", "metrics", "logs"] }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "metrics", "logs", "http-proto", "reqwest-blocking-client", "reqwest-rustls-webpki-roots"] }
+opentelemetry-proto = { version = "0.32", default-features = false, features = ["gen-tonic-messages", "profiles", "trace", "metrics", "logs"] }
+prost = "0.14"
+pulldown-cmark = "0.12"
+ratatui = "0.30.2"
+regex = "1"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream", "gzip", "brotli", "deflate", "charset", "blocking"] }
+ropey = "1.6"
+rusqlite = { version = "0.37", features = ["bundled"] }
+scraper = "0.24"
+rustc-hash = "2"
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+sha2 = "0.10"
+similar = "2.7"
+slotmap = { version = "1.1", features = ["serde"] }
+smol_strc = { package = "smol_str", version = "0.3", features = ["serde"] }
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+tar = { version = "0.4", default-features = false }
+tempfile = "3.27"
+thiserror = "2"
+tokio = { version = "1", features = ["fs", "io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-tungstenite = "0.30"
+toml = "0.9.5"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-opentelemetry = "0.33"
+tracing-subscriber = { version = "0.3", features = ["registry"] }
+trash = "5"
+unicode-segmentation = "1.13"
+unicode-width = "0.2"
+url = { version = "2", features = ["serde"] }
+uiautomation = { version = "0.25.1", default-features = false }
+webbrowser = "1"
+web-time = "1.1"
+zmij = "1"
+quote = "1"
+syn = { version = "2", features = ["full", "parsing"] }
+zip = { version = "=8.2.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+# teal-lang dependencies use the fixed local Git repository during the extraction phase.
+teal-abi = { git = "file:///D:/teal-lang", version = "0.1.0" }
+teal-compiler = { git = "file:///D:/teal-lang", version = "0.1.0" }
+teal-vm = { git = "file:///D:/teal-lang", version = "0.1.0" }
+teal-core = { git = "file:///D:/teal-lang", version = "0.1.0" }
+teal-packages = { git = "file:///D:/teal-lang", version = "0.1.0" }
+teal-utils = { git = "file:///D:/teal-lang", version = "0.1.0" }
+teal-host = { git = "file:///D:/teal-lang", version = "0.1.0" }
+teal-security = { git = "file:///D:/teal-lang", version = "0.1.0", default-features = false }
+teal-agent = { git = "file:///D:/teal-lang", version = "0.1.0" }
+teal-model = { git = "file:///D:/teal-lang", version = "0.1.0" }
+teal-config = { git = "file:///D:/teal-lang", version = "0.1.0" }
+teal-knowledge = { git = "file:///D:/teal-lang", version = "0.1.0" }
+teal-runtime = { git = "file:///D:/teal-lang", version = "0.1.0" }
+teal-test-support = { git = "file:///D:/teal-lang", version = "0.1.0" }
+teal = { package = "teal-runtime", git = "file:///D:/teal-lang", version = "0.1.0" }
+
+# teal-workbench dependencies
+teal-bench = { path = "crates/teal-bench" }
+teal-workbench-automation = { path = "crates/teal-workbench-automation" }
+teal-workbench-core = { path = "crates/teal-workbench-core" }
+teal-workbench-services = { path = "crates/teal-workbench-services" }
+teal-web = { path = "crates/teal-web" }
+teal-browser = { path = "crates/teal-browser" }
+teal-computer = { path = "crates/teal-computer" }
+teal-workspace = { path = "crates/teal-workspace" }
+teal-fmt = { path = "crates/teal-fmt" }
+teal-lsp = { path = "crates/teal-lsp" }
+teal-dap = { path = "crates/teal-dap" }
+teal-lsp-client = { path = "crates/teal-lsp-client" }
+teal-text = { path = "crates/teal-text" }
+[workspace.lints.rust]
+unexpected_cfgs = "warn"
+unused = { level = "allow", priority = -1 }
+
+[package]
+name = "teal"
+description = "Teal 产品命令派发与独立工具集合"
 default-run = "teal"
 autobins = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+license.workspace = true
+build = "build.rs"
 
 [[bin]]
 name = "teal"
 path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+teal-abi.workspace = true
+teal-agent = { workspace = true, features = ["codex-auth"] }
+teal-bench.workspace = true
+teal-config.workspace = true
+teal-compiler.workspace = true
+teal-core.workspace = true
+teal-fmt.workspace = true
+teal-host.workspace = true
+teal-model = { workspace = true, features = ["codex-auth"] }
+teal-runtime = { workspace = true, features = ["ffi"] }
+teal-security = { workspace = true, features = ["sqlite", "native-policy"] }
+teal-vm.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rusqlite.workspace = true
+toml.workspace = true

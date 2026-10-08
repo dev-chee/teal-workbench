@@ -1,7 +1,7 @@
 schema = 1
 kind = "logical-workspace"
 name = "teal-workbench"
-repository_root = "../teal"
+repository_root = "."
 depends_on = ["teal-lang"]
 
 # 这些路径相对当前仓库根目录；拆仓时按本表复制到 teal-workbench 仓库根。
@@ -21,7 +21,6 @@ members = [
   "crates/teal-lsp-client",
   "crates/teal-text",
   "tools/teal-xtask",
-  "tools/teal-test-support",
 ]
 
 package_roots = [
