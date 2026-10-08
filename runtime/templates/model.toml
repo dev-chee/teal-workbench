@@ -1,0 +1,47 @@
+# Teal 模型配置模板（`model.toml`）。
+#
+# 复制到用户 `TEAL_HOME/model.toml`，或复制到受信任工作区的 `.teal/model.toml`。
+# `profiles` 是模型选择预设，`providers.<id>` 保存服务、认证资料和共享模型能力。
+# 凭证正文永远不会写入 TOML。安装层没有模型配置；工作区只能在信任后声明
+# `default`、`profiles` 与 `providers`。
+#
+# 成功登录后会原子更新认证资料的账户摘要与 `available_models`。provider 模型能力
+# 保留显式配置；远端未返回的模型定义不会被删除。
+# 协议 ID、环境变量名和服务 URL 在读取配置时校验；未知模型字段会被拒绝。
+
+# 当前写入格式版本；version 12 及更早的配置直接拒绝，不做迁移。
+version = 14
+
+# 每个 provider 当前使用的认证资料；不会改写模型预设中的固定认证资料。
+[profiles]
+
+[providers]
+
+# API Key 示例：认证资料只引用环境变量名；秘密值由 `.env` 或进程环境提供。
+# default = "work"
+#
+# [profiles.work]
+# provider = "codex"
+# auth_profile = "codex-api"
+# model = "gpt-5.6-sol"
+#
+# [providers.codex.access]
+# local = false
+
+# [providers.codex.access.http_auth]
+# method = "api-key"
+# header = "authorization"
+# prefix = "Bearer "
+#
+# [providers.codex.auth_profiles.codex-api]
+# method = "api-key"
+# env_key = "OPENAI_API_KEY"
+# credential_managed = false
+# available_models = ["gpt-5.6-sol"]
+#
+# [providers.codex.models."gpt-5.6-sol"]
+# context_window = 272000
+# features = ["images"]
+
+# `method = "codex-cli"` 会共享当前 `CODEX_HOME` 的官方凭证；Teal 不复制或删除该凭证。
+# `account_id`、`email` 与 `plan_type` 是最近一次认证确认的非秘密账户摘要。

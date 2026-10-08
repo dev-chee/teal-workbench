@@ -1,0 +1,37 @@
+# Teal 保留域配置模板（`config.toml`）。
+#
+# 复制到用户 `TEAL_HOME/config.toml`，或复制到受信任工作区的 `.teal/config.toml`。
+# 该文件保存配置系统自身的策略域：统一权限、工作区信任、知识与长期记忆声明。
+# 权限、信任与长期记忆只能由用户层持久保存；工作区层只能声明 `knowledge.workspace_root`。
+# 工作台声明在 `bench.toml`，语言运行时在 `runtime.toml`，模型在 `model.toml`；
+# 随发行分发的安装层默认值是 `runtime/config/config.toml`，那里不能包含本文件的策略段。
+
+# 当前写入格式版本；旧版本配置会被拒绝，不做迁移。
+version = 14
+
+# 没有匹配规则时询问。权限规则只能由用户层持久保存。
+[permissions]
+preset = "ask"
+# [[permissions.rules]]
+# subject = { kind = "workspace", root = "C:/workspace/example" }
+# operation = "filesystem.read"
+# resource = { kind = "path", path = "C:/workspace/example", scope = "descendants" }
+# effect = "allow"
+
+# 用户层专有的工作区信任与授权目录，默认为空；工作区层不能声明该表。
+[projects]
+# [projects."C:/workspace/example"]
+# trust_level = "unknown"
+# permission_preset = "ask"
+# permission_generation = 0
+
+# 官方知识与本地知识层声明。用户级层根相对 `<teal_home>`，工作区级层根相对工作区根；
+# 工作区层只在用户层把该工作区记为 trusted 时才装载。
+[knowledge]
+enabled = true
+inject_inline = true
+cache = true
+max_files = 256
+max_bytes = 8388608
+user_root = "knowledge"
+workspace_root = ".teal/knowledge"

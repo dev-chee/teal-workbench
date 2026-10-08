@@ -1,0 +1,37 @@
+[package]
+name = "teal-lsp"
+description = "Teal 语言服务器协议实现"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+readme = "README.md"
+publish = false
+autobins = false
+
+[dependencies]
+clap.workspace = true
+tracing.workspace = true
+serde_json.workspace = true
+teal-config.workspace = true
+teal-compiler.workspace = true
+teal-fmt.workspace = true
+teal-packages.workspace = true
+teal-text.workspace = true
+teal-workbench-services = { workspace = true, features = ["observability"] }
+tokio.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+teal-test-support.workspace = true
+
+[lib]
+name = "teal_lsp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "teal-lsp"
+path = "src/bin/teal-lsp.rs"
+
+[lints]
+workspace = true

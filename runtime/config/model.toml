@@ -1,0 +1,8 @@
+# Teal 安装层模型配置（`model.toml`）。
+#
+# 该文件随发行分发，位于可执行文件旁的 `runtime/config/`，是优先级最低、只读的安装层。
+# 模型预设、认证资料与 provider/model 目录都没有安装层默认值，由用户层或受信任
+# 工作区的 `model.toml` 声明，给用户复制的完整模板是 `runtime/templates/model.toml`。
+
+# 当前写入格式版本；旧版本配置会被拒绝，不做迁移。
+version = 14

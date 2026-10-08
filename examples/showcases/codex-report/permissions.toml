@@ -1,0 +1,46 @@
+version = 3
+
+[permissions]
+preset = "ask"
+
+[[permissions.rules]]
+subject = { kind = "workspace", root = "F:/teal" }
+operation = "clock.read"
+resource = { kind = "any" }
+effect = "allow"
+
+[[permissions.rules]]
+subject = { kind = "workspace", root = "F:/teal" }
+operation = "filesystem.read"
+resource = { kind = "path", path = "E:/codex", scope = "descendants" }
+effect = "allow"
+
+[[permissions.rules]]
+subject = { kind = "workspace", root = "F:/teal" }
+operation = "filesystem.read"
+resource = { kind = "path", path = "F:/notes", scope = "descendants" }
+effect = "allow"
+
+[[permissions.rules]]
+subject = { kind = "workspace", root = "F:/teal" }
+operation = "filesystem.write"
+resource = { kind = "path", path = "F:/notes", scope = "descendants" }
+effect = "allow"
+
+[[permissions.rules]]
+subject = { kind = "workspace", root = "F:/teal" }
+operation = "process.spawn"
+resource = { kind = "path", path = "C:/Program Files/Git/cmd/git.exe" }
+effect = "allow"
+
+[[permissions.rules]]
+subject = { kind = "workspace", root = "F:/teal" }
+operation = "process.inspect"
+resource = { kind = "application", namespace = "process", identity = "root", scope = "descendants" }
+effect = "allow"
+
+[[permissions.rules]]
+subject = { kind = "workspace", root = "F:/teal" }
+operation = "process.control"
+resource = { kind = "application", namespace = "process", identity = "root", scope = "descendants" }
+effect = "allow"

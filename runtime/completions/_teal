@@ -1,0 +1,38 @@
+#compdef teal
+
+_teal() {
+    local -a root_commands compile_arguments run_arguments permission_arguments auth_arguments bench_arguments
+    root_commands=(
+        'compile:Compile and check Teal programs'
+        'run:Compile and run Teal programs'
+        'test:Run registered Teal tests'
+        'auth:Manage authentication profiles'
+        'perm:Manage workspace permission scopes'
+        'config:Inspect and edit layered configuration'
+        'knowledge:Manage versioned knowledge'
+        'bench:Start the Teal Bench workspace'
+        'fmt:Format Teal source'
+        'lsp:Start the language server'
+        'dap:Start the debug adapter'
+    )
+    compile_arguments=(options profiles lints --code --format --runtime-profile --optimization --debug --no-debug --debug-info --no-debug-info --allow --warn --deny --forbid --otel-traces --otel-metrics --otel-endpoint --trace-functions)
+    run_arguments=(--code --bindings --runtime-profile --optimization --debug --no-debug --debug-info --no-debug-info --allow --warn --deny --forbid --permission-preset --interaction --permission-file --otel-traces --otel-metrics --otel-endpoint --trace-functions --otel-profiles --otel-profiles-endpoint --profile --profile-interval-ms)
+    permission_arguments=(show preset grant explain operations revoke)
+    auth_arguments=(login status logout use codex deepseek --profile --method --scope --stdin-key --env-key --yes --verify --format)
+    bench_arguments=(--safe-mode --no-config --session --no-mouse)
+
+    if (( CURRENT == 2 )); then
+        _describe -t commands 'teal command' root_commands
+        return
+    fi
+
+    case "$words[2]" in
+        compile) _values 'compile argument' $compile_arguments ;;
+        run) _values 'run argument' $run_arguments ;;
+        perm) _values 'permission command' $permission_arguments ;;
+        auth) _values 'authentication argument' $auth_arguments ;;
+        bench) _values 'Bench argument' $bench_arguments ;;
+    esac
+}
+
+_teal "$@"

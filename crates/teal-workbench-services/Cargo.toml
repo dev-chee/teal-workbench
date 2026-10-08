@@ -1,0 +1,77 @@
+[package]
+name = "teal-workbench-services"
+description = "Teal 工作台的文件系统、搜索、Markdown、进程与会话服务"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+teal-security = { workspace = true, default-features = false }
+base64.workspace = true
+tracing.workspace = true
+arboard.workspace = true
+directories.workspace = true
+ignore.workspace = true
+pulldown-cmark.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+teal-workbench-core.workspace = true
+teal-agent.workspace = true
+teal-knowledge.workspace = true
+teal-model.workspace = true
+teal-web.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+url.workspace = true
+sha2.workspace = true
+teal-utils.workspace = true
+similar = { workspace = true, optional = true }
+thiserror.workspace = true
+tempfile.workspace = true
+toml.workspace = true
+tokio.workspace = true
+trash.workspace = true
+
+teal = { workspace = true, features = ["ffi"], optional = true }
+teal-compiler = { workspace = true, optional = true }
+teal-packages = { workspace = true, optional = true }
+teal-config = { workspace = true, optional = true }
+teal-vm = { workspace = true, optional = true }
+teal-lsp-client = { workspace = true, optional = true }
+teal-browser = { workspace = true, optional = true }
+teal-computer = { workspace = true, optional = true }
+teal-workspace = { workspace = true, optional = true }
+opentelemetry = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, optional = true }
+tracing-appender = { workspace = true, optional = true }
+tracing-opentelemetry = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"], optional = true }
+
+[features]
+agent-algorithms = ["dep:similar"]
+tools = ["agent-algorithms", "dep:teal-compiler", "dep:teal-packages", "dep:teal", "dep:teal-config", "dep:teal-vm", "dep:teal-lsp-client", "dep:teal-browser", "dep:teal-computer", "dep:teal-workspace"]
+observability = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-appender", "dep:tracing-opentelemetry", "dep:tracing-subscriber"]
+
+[[test]]
+name = "knowledge"
+required-features = ["tools"]
+
+[[test]]
+name = "three_way_merge"
+required-features = ["agent-algorithms"]
+
+[dev-dependencies]
+opentelemetry-proto.workspace = true
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+prost.workspace = true
+
+slotmap.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "teal-run"
+path = "src/bin/teal-run.rs"
+required-features = ["tools"]

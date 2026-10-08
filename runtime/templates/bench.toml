@@ -1,0 +1,46 @@
+# Teal 工作台声明模板（`bench.toml`）。
+#
+# 复制到用户 `TEAL_HOME/bench.toml`，或复制到受信任工作区的 `.teal/bench.toml`。
+# 这里只保存声明式工作台配置；相对路径相对声明它的那一层解析。
+# 安装层默认值在 `runtime/config/bench.toml`，那里只能声明 `session_restore`。
+# Agent 行为位于 Teal 源码；模型选择属于 `model.toml`。内建 `default` 无需在此登记。
+
+# 当前写入格式版本；旧版本配置会被拒绝，不做迁移。
+version = 14
+
+# 会话恢复策略：`prompt`、`always` 或 `never`。
+# session_restore = "prompt"
+
+# 源码 Agent 应用。行为和模型选择由脚本定义；未配置时使用内建 default。
+[agent_apps]
+
+# [agent_apps.review]
+# script = "agents/review.tl"
+
+# MCP 服务器。
+[mcp_servers]
+
+# 命名命令脚本。
+[commands]
+
+# 按事件名分组的 Hook 脚本。
+[hooks]
+
+# 命名面板脚本。
+[panels]
+
+# 本地工作台插件；加载配置不等于批准插件操作。
+[plugins]
+
+# [mcp_servers.example]
+# transport = "stdio"
+# target = "../tools/example-server"
+# arguments = ["--stdio"]
+#
+# [commands.build]
+# script = "scripts/build.tl"
+#
+# [plugins.example]
+# path = "extensions/example"
+# [plugins.example.config]
+# mode = "dev"

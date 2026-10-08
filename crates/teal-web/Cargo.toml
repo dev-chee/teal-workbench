@@ -1,0 +1,23 @@
+[package]
+name = "teal-web"
+description = "Teal 的无 JavaScript 结构化文本网页客户端"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+teal-security = { workspace = true, default-features = false }
+encoding_rs.workspace = true
+tracing.workspace = true
+reqwest.workspace = true
+scraper.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+url.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

@@ -1,0 +1,17 @@
+# Teal 安装层配置默认值（`config.toml`）。
+#
+# 该文件随发行分发，位于可执行文件旁的 `runtime/config/`，是优先级最低、只读的安装层。
+# 安装层只提供代码默认值的显式副本：它不能声明权限、信任、记忆、秘密，也不能声明
+# 本地知识层根；给用户复制的完整模板是 `runtime/templates/config.toml`。
+# 工作台声明在 `bench.toml`，语言运行时在 `runtime.toml`，模型在 `model.toml`。
+
+# 当前写入格式版本；旧版本配置会被拒绝，不做迁移。
+version = 14
+
+# 官方知识默认启用；安装层只允许这些开关与配额键。
+[knowledge]
+enabled = true
+inject_inline = true
+cache = true
+max_files = 256
+max_bytes = 8388608

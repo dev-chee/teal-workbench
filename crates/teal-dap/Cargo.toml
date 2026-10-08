@@ -1,0 +1,40 @@
+[package]
+name = "teal-dap"
+description = "Teal 调试适配器协议实现"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+readme = "README.md"
+publish = false
+autobins = false
+
+[dependencies]
+clap.workspace = true
+teal-security = { workspace = true, default-features = false, features = ["sqlite"] }
+tracing.workspace = true
+getrandom.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+teal-abi.workspace = true
+teal-compiler.workspace = true
+teal-core.workspace = true
+teal-config.workspace = true
+teal-host.workspace = true
+teal-packages.workspace = true
+teal-vm.workspace = true
+teal-workbench-services = { workspace = true, features = ["observability"] }
+toml.workspace = true
+
+[lib]
+name = "teal_dap"
+path = "src/lib.rs"
+
+[[bin]]
+name = "teal-dap"
+path = "src/bin/teal-dap.rs"
+
+[lints]
+workspace = true

@@ -1,0 +1,33 @@
+[package]
+name = "teal-workbench-core"
+description = "Teal 工作台的编辑器、布局、命令、消息与恢复领域模型"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+syntax = ["dep:bincode", "dep:regex"]
+
+[dependencies]
+bincode = { workspace = true, optional = true }
+regex = { workspace = true, optional = true }
+teal-security = { workspace = true, default-features = false }
+tracing.workspace = true
+ropey.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+slotmap.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+trash.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[lints]
+workspace = true

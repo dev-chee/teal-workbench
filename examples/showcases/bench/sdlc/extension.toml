@@ -1,0 +1,42 @@
+# Cross-tier Showcase：AI-native SDLC 工作模式的能力、命令、Hook 与面板清单。
+id = "sdlc"
+version = "1.0.0"
+api_version = 1
+exclusive_workspace = true
+operations = ["extension.read", "extension.write", "extension.task", "extension.approve", "extension.command", "extension.git", "editor.read", "editor.write", "ui.panel"]
+
+[commands]
+sdlc = "mode.tl"
+[modes]
+sdlc = "mode.tl"
+[panels]
+sdlc = "panel.tl"
+[tasks]
+initialize = "initialize.tl"
+intent = "draft.tl"
+spec = "draft.tl"
+plan = "draft.tl"
+commit = "commit.tl"
+build = "build.tl"
+verify = "verify.tl"
+deliver = "deliver.tl"
+deploy = "deploy.tl"
+diagnose = "diagnose.tl"
+
+[task_tools]
+intent = ["workspace.read_file", "workspace.search"]
+spec = ["workspace.read_file", "workspace.search"]
+plan = ["workspace.read_file", "workspace.search"]
+build = ["workspace.read_file", "workspace.search", "workspace.write_file", "workspace.replace_file", "workspace.diagnostics"]
+verify = ["workspace.read_file", "workspace.search"]
+diagnose = ["workspace.read_file", "workspace.search"]
+
+[task_write_state]
+build = "planned_files"
+
+[config]
+agent = ""
+checks = '["build","test","lint","eval"]'
+max_revisions = "3"
+environment = "staging"
+# 命名命令必须由项目配置提供；示例不把空命令或 echo 当作验证。

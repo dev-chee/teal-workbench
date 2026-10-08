@@ -1,0 +1,10 @@
+# Cross-tier Showcase：最小工作台扩展清单及其显式能力集合。
+id = "hello-extension"
+version = "1.0.0"
+api_version = 1
+operations = ["extension.read", "extension.write", "ui.panel"]
+
+[commands]
+extension-hello = "hello.tl"
+[panels]
+extension-hello = "panel.tl"

@@ -1,0 +1,15 @@
+# Cross-tier Showcase：工作台只登记源码 Agent 入口，不保存工作流规则。
+#
+# 该示例展示 `bench.toml`（工作台类别）；语言运行时位于 `runtime.toml`，模型位于
+# `model.toml`，权限与信任位于 `config.toml`。三层顺序为安装、用户、工作区。
+#
+# 模型选择与阶段状态由同一份 Teal 程序管理；也可直接用 teal run 执行。
+version = 14
+
+session_restore = "prompt"
+
+[agent_apps.sdlc]
+script = "sdlc/agent.tl"
+
+[commands.hello]
+script = "hello.tl"

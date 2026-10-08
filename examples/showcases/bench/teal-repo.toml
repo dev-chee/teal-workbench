@@ -1,0 +1,9 @@
+# Teal 仓库自举用工作台配置；复制到 `<workspace>/.teal/bench.toml` 后使用。
+#
+# 工作台只登记源码 Agent；模型选择来自 `model.toml`，流程和指令写在 Teal 程序中。
+version = 14
+
+session_restore = "prompt"
+
+[agent_apps.coding]
+script = "../examples/showcases/bench/sdlc/agent.tl"

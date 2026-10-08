@@ -1,0 +1,11 @@
+# Teal 安装层工作台默认值（`bench.toml`）。
+#
+# 该文件随发行分发，位于可执行文件旁的 `runtime/config/`，是优先级最低、只读的安装层。
+# 安装层只能提供界面默认值，不能携带命令、Hook、面板、插件、MCP 服务器或 Agent 声明；
+# 给用户复制的完整模板是 `runtime/templates/bench.toml`。
+
+# 当前写入格式版本；旧版本配置会被拒绝，不做迁移。
+version = 14
+
+# 会话恢复策略：`prompt`、`always` 或 `never`。
+# session_restore = "prompt"

@@ -1,0 +1,8 @@
+format = 5
+name = "agents"
+version = "1.0.0"
+language_edition = "2026"
+dependencies = ["std"]
+
+[modules]
+"delivery.tl" = "agent"
