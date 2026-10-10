@@ -4,7 +4,7 @@
 
 | 项目 | 当前联调基线 | 发布目标 | 工作台消费方式 |
 | --- | --- | --- | --- |
-| Git 源 | `https://github.com/dev-chee/teal-lang.git` | `v0.1.0`（由 `423da3783d45dfbb09a90b1bcddc3f89d8296b28` 创建） | 初始联调锁定 `rev = 11491542dbf56393a91df53ce68f2a26ec2efad1`；全部门禁通过后切换固定 tag |
+| Git 源 | `https://github.com/dev-chee/teal-lang.git` | `v0.1.0`（本地发布候选 `f31bd500f7b8c0e5b433cb7dfb427d11e98c83bb`） | 当前锁定 `rev = 11491542dbf56393a91df53ce68f2a26ec2efad1`；远端发布同名 tag 后切换固定 tag |
 | `teal-runtime` / 根 `teal` | `0.1.0` | `0.1.0` | `ffi` 按工作台 crate 需要启用；根派发器由工作台构建 |
 | `teal-abi` | 程序格式 59 | 程序格式 62 | 语言仓库独占生成和验证，工作台只消费编解码 API |
 | `teal-vm` | VM snapshot 22 | VM snapshot 25 | 语言仓库独占快照实现与覆盖率 |
@@ -23,7 +23,12 @@
 
 ## 验收记录
 
-- 语言发布 worktree：`/home/chi/teal-lang-workbench-release`，基线 `423da3783d45dfbb09a90b1bcddc3f89d8296b28`。
+- 语言发布 worktree：`/home/chi/teal-lang-workbench-release`，发布候选 HEAD `f31bd500f7b8c0e5b433cb7dfb427d11e98c83bb`，本地 tag `v0.1.0`。
 - 工作台联调 worktree：当前仓库分支 `codex/workbench-stabilization`。
 - 运行 `cargo metadata --locked` 前必须确认 Cargo.lock 的 source 不再是 `file:///D:/teal-lang`。
 - 完整 gate 需要记录两个仓库 HEAD、语言 revision/tag、命令、退出码和 `target/test-gate/<task-id>/` 报告路径；输入变化后旧结果标记为 `STALE`。
+
+## 发布验收状态
+
+- `teal-lang` 的格式检查、workspace 测试、workspace clippy、ABI/VM/Host coverage、builtins、knowledge、rustdoc、WASM 检查和真实二进制帮助场景均已通过；最终 coverage 摘要为 VM 行 82.65%/区域 84.08%、VM debug target 行 86.00%/区域 82.23%、Host 行 83.25%/区域 80.47%。
+- 发布候选 worktree 保持干净，本地 `v0.1.0` 指向上述 HEAD。`git ls-remote` 当前未返回远端 `v0.1.0`，因此工作台暂时保留可从 GitHub 获取的固定 revision；远端 tag 发布后只更新依赖声明和 Cargo.lock 的语言 source。
