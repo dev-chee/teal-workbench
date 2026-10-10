@@ -10,5 +10,5 @@ dylib "native" {
 
 
 task main() {
-    print("Use `teal c` for this declaration-only example.");
+    print("Use `teal compile` for this declaration-only example.");
 }
