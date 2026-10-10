@@ -1,15 +1,11 @@
 # teal-xtask
 
-Teal 工作台仓库维护命令：分发组装、中文 rustdoc、逻辑 workspace 校验和可恢复的最终门禁调度。通过根目录的 `cargo xtask <command>` 调用，不作为产品运行时 API 发布。
+工作台仓库维护入口，通过 `cargo xtask <command>` 调用，不作为产品运行时 API 发布。
 
-## 命令
+- `workspace verify`：使用当前 `cargo metadata --locked --no-deps` 检查 workspace，并核对六个工作台扩展包。
+- `rustdoc audit|files|build|verify`：只覆盖当前工作台的 13 个产品 library target；验证前与 Cargo 实际目标比较。
+- `dist`：构建九个工作台二进制并组装工作台资源、摘要清单和平台归档。
+- `dist --language-root PATH`：额外核对干净语言 checkout 与锁文件提交一致，构建五个语言 sibling binaries，合并语言标准包和工作台扩展 catalog。根 `teal` 派发器始终由工作台提供。
+- `test-gate run --spec PATH [--force]`：执行显式 argv 规范，保存日志、报告与前后内容指纹；输入变化时结果为 `STALE`。
 
-- `cargo xtask dist` 构建并组装只包含 workbench 工具和 workbench runtime 的发行包。
-- `cargo xtask dist --language-root PATH` 在语言仓库 checkout 干净且与锁定 revision 一致时，额外构建 `teal-c`、`teal-test`、`teal-auth`、`teal-model`、`teal-audit`，并合并 `std`、`catalog-core` 与 workbench runtime。
-- `cargo xtask rustdoc audit|files|build|verify` 只检查本仓库 `crates/` 下的公开库。
-- `cargo xtask workspace verify` 校验当前 Cargo workspace 和 workbench runtime package catalog。
-- `cargo xtask test-gate run --spec target/test-gate/<task-id>/gate.toml [--force]` 按显式规范执行最终门禁。
-
-`teal-lang` 的 builtins、knowledge、ABI/VM/Host coverage 和语言仓库发行工具由 `teal-lang` 仓库负责。本仓库不读取 sibling `workspace.toml`，也不从工作台源码生成语言制品。跨仓发行必须使用 `--language-root`，并且该 checkout 必须干净、HEAD 必须等于 Cargo 锁定的 `11491542dbf56393a91df53ce68f2a26ec2efad1`。
-
-覆盖率和完整 workspace 门禁不进入默认验证矩阵；验证范围按根 `AGENTS.md` 和本次改动确定。`teal-xtask` 是 `publish = false` 的维护工具。
+`builtins`、`knowledge`、ABI/VM/Host coverage 和语言 rustdoc 归 `teal-lang` 的维护工具所有。本仓库不复制语言实现，也不生成标准包制品。验证和发行边界见 [跨仓兼容矩阵](../../docs/TEAL-LANG-COMPAT.md) 与 [AGENTS.md](../../AGENTS.md)。

@@ -3,14 +3,13 @@
 //! 打开文件通过共享缓冲区事务更新，关闭文件复用保留编码的原子写入器。
 //! 检查点和操作次序不构成跨文件原子事务；后续失败可能留下先前已完成的资源变化。
 
+use crate::anchored::DirectoryAnchor;
 use crate::{BufferStore, Document, DocumentChange, TextEncoding, Transaction};
 use std::{
     fs,
-    io::Write,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
-use tempfile::NamedTempFile;
 
 static NEXT_CHECKPOINT: AtomicU64 = AtomicU64::new(1);
 
@@ -55,8 +54,8 @@ pub enum WorkspaceIntent {
 }
 
 mod targets;
-pub use targets::{ResolvedEntry, ResolvedTarget};
 use targets::Root;
+pub use targets::{ResolvedEntry, ResolvedTarget};
 
 /// 共享文件修改规则；串行执行和工作线程副本仍由调用方安排。
 #[derive(Clone)]
@@ -154,15 +153,40 @@ impl WorkspaceMutationCoordinator {
             .ok_or("Missing target parent directory")?;
         let parent = self.resolve_write(parent, target.confined())?;
         parent.revalidate()?;
-        fs::create_dir_all(parent.path()).map_err(|error| error.to_string())?;
+        DirectoryAnchor::ensure(parent.path()).map_err(|error| error.to_string())?;
         target.revalidate()?;
         parent.materialized()
+    }
+
+    /// 在父目录证明仍有效时取得目录锚点；后续叶操作必须使用该锚点。
+    fn anchor_parent(
+        &self,
+        target: &ResolvedTarget,
+    ) -> Result<(ResolvedTarget, DirectoryAnchor), String> {
+        let parent = self.parent(target)?;
+        let anchor = DirectoryAnchor::open(parent.path()).map_err(|error| error.to_string())?;
+        parent.revalidate()?;
+        Ok((parent, anchor))
+    }
+
+    fn target_name(target: &ResolvedTarget) -> Result<&std::ffi::OsStr, String> {
+        target
+            .path()
+            .file_name()
+            .ok_or_else(|| "Missing target file name".to_owned())
+    }
+
+    fn entry_name(entry: &ResolvedEntry) -> Result<&std::ffi::OsStr, String> {
+        entry
+            .path()
+            .file_name()
+            .ok_or_else(|| "Missing directory entry name".to_owned())
     }
 
     fn backup_target(&self) -> Result<ResolvedTarget, String> {
         let directory = self.resolve_write(&self.checkpoints, false)?;
         directory.revalidate()?;
-        fs::create_dir_all(directory.path()).map_err(|error| error.to_string())?;
+        DirectoryAnchor::ensure(directory.path()).map_err(|error| error.to_string())?;
         let id = NEXT_CHECKPOINT.fetch_add(1, Ordering::Relaxed);
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -175,10 +199,17 @@ impl WorkspaceMutationCoordinator {
         target.require_workspace(&self.root)?;
         target.revalidate()?;
         if target.exists() && !target.is_dir() {
+            let (_, source_anchor) = self.anchor_parent(target)?;
+            let source_name = Self::target_name(target)?;
+            let contents = source_anchor
+                .read(source_name)
+                .map_err(|error| error.to_string())?;
             let backup = self.backup_target()?;
-            target.revalidate()?;
-            backup.revalidate()?;
-            fs::copy(target.path(), backup.path()).map_err(|error| error.to_string())?;
+            let (_, backup_anchor) = self.anchor_parent(&backup)?;
+            let backup_name = Self::target_name(&backup)?;
+            backup_anchor
+                .create_new(backup_name, &contents)
+                .map_err(|error| error.to_string())?;
         }
         Ok(())
     }
@@ -202,12 +233,20 @@ impl WorkspaceMutationCoordinator {
                 return Err("Directory checkpoints are unsupported".into());
             }
             let backup = self.backup_target()?;
-            target.revalidate()?;
-            backup.revalidate()?;
             if target.exists() {
-                fs::copy(target.path(), backup.path()).map_err(|error| error.to_string())?;
+                let (_, source_anchor) = self.anchor_parent(&target)?;
+                let contents = source_anchor
+                    .read(Self::target_name(&target)?)
+                    .map_err(|error| error.to_string())?;
+                let (_, backup_anchor) = self.anchor_parent(&backup)?;
+                backup_anchor
+                    .create_new(Self::target_name(&backup)?, &contents)
+                    .map_err(|error| error.to_string())?;
             } else {
-                fs::write(backup.path(), b"").map_err(|error| error.to_string())?;
+                let (_, backup_anchor) = self.anchor_parent(&backup)?;
+                backup_anchor
+                    .create_new(Self::target_name(&backup)?, b"")
+                    .map_err(|error| error.to_string())?;
             }
             entries.push(serde_json::json!({"backup":backup.path(),"path":target.path(),"existed":target.exists()}));
         }
@@ -266,23 +305,12 @@ impl WorkspaceMutationCoordinator {
             if target.is_dir() || target.exists() || buffers.find(target.path()).is_some() {
                 return Err("Workspace creation target already exists".into());
             }
-            let parent = self.parent(&target)?;
+            let (_, parent_anchor) = self.anchor_parent(&target)?;
             self.checkpoint(&target)?;
             target.revalidate()?;
-            let mut temporary =
-                NamedTempFile::new_in(parent.path()).map_err(|error| error.to_string())?;
-            temporary
-                .write_all(text.as_bytes())
+            parent_anchor
+                .create_new(Self::target_name(&target)?, text.as_bytes())
                 .map_err(|error| error.to_string())?;
-            temporary
-                .as_file_mut()
-                .sync_all()
-                .map_err(|error| error.to_string())?;
-            parent.revalidate()?;
-            target.revalidate()?;
-            temporary
-                .persist_noclobber(target.path())
-                .map_err(|error| error.error.to_string())?;
             Ok(())
         })
     }
@@ -307,7 +335,7 @@ impl WorkspaceMutationCoordinator {
         if target.is_dir() {
             return Err("Text modification points to a directory".into());
         }
-        let parent_guard = self.parent(&target)?;
+        let (parent_guard, parent_anchor) = self.anchor_parent(&target)?;
         self.checkpoint(&target)?;
         target.revalidate()?;
         if let Some(buffer) = buffers.find(target.path()) {
@@ -324,15 +352,17 @@ impl WorkspaceMutationCoordinator {
                 .apply(delta.transaction)
                 .map_err(|error| error.to_string())?;
             target.revalidate()?;
-            // Windows 在目标身份句柄仍打开时会拒绝原子替换。保留父目录身份，
-            // 最后一次核对后释放叶句柄，再对已解析路径执行替换。
+            // Windows 必须释放叶身份句柄；父目录锚点仍保持整个保存过程的祖先身份。
             parent_guard.revalidate()?;
-            let path = target.path().to_path_buf();
+            let name = Self::target_name(&target)?.to_os_string();
             drop(target);
-            buffer.save_to(&path).map_err(|error| error.to_string())
+            buffer
+                .save_to_anchor(&parent_anchor, &name)
+                .map_err(|error| error.to_string())
         } else {
             let mut document = if target.exists() {
-                Document::open(target.path()).map_err(|error| error.to_string())?
+                Document::open_from_anchor(&parent_anchor, Self::target_name(&target)?)
+                    .map_err(|error| error.to_string())?
             } else {
                 Document::from_text("")
             };
@@ -350,9 +380,11 @@ impl WorkspaceMutationCoordinator {
                 .map_err(|error| error.to_string())?;
             target.revalidate()?;
             parent_guard.revalidate()?;
-            let path = target.path().to_path_buf();
+            let name = Self::target_name(&target)?.to_os_string();
             drop(target);
-            document.save_to(&path).map_err(|error| error.to_string())
+            document
+                .save_to_anchor(&parent_anchor, &name)
+                .map_err(|error| error.to_string())
         }
     }
 
@@ -402,21 +434,25 @@ impl WorkspaceMutationCoordinator {
         confined: bool,
     ) -> Result<(), String> {
         let target = self.resolve_read(path, confined)?;
-        let parent_guard = self.parent(&target)?;
+        let (parent_guard, parent_anchor) = self.anchor_parent(&target)?;
         self.checkpoint(&target)?;
         target.revalidate()?;
         if let Some(buffer) = buffers.find(target.path()) {
             buffer.apply(transaction).map_err(|error| error.to_string())
         } else {
-            let mut document = Document::open(target.path()).map_err(|error| error.to_string())?;
+            let mut document =
+                Document::open_from_anchor(&parent_anchor, Self::target_name(&target)?)
+                    .map_err(|error| error.to_string())?;
             document
                 .apply(transaction)
                 .map_err(|error| error.to_string())?;
             target.revalidate()?;
             parent_guard.revalidate()?;
-            let path = target.path().to_path_buf();
+            let name = Self::target_name(&target)?.to_os_string();
             drop(target);
-            document.save_to(&path).map_err(|error| error.to_string())
+            document
+                .save_to_anchor(&parent_anchor, &name)
+                .map_err(|error| error.to_string())
         }
     }
 
@@ -445,15 +481,15 @@ impl WorkspaceMutationCoordinator {
                 if target.exists() {
                     return Err("Target already exists".into());
                 }
-                self.parent(&target)?;
+                let (_, parent_anchor) = self.anchor_parent(&target)?;
                 target.revalidate()?;
                 if directory {
-                    fs::create_dir(target.path()).map_err(|error| error.to_string())?;
+                    parent_anchor
+                        .create_dir(Self::target_name(&target)?)
+                        .map_err(|error| error.to_string())?;
                 } else {
-                    fs::OpenOptions::new()
-                        .write(true)
-                        .create_new(true)
-                        .open(target.path())
+                    parent_anchor
+                        .create_new(Self::target_name(&target)?, b"")
                         .map_err(|error| error.to_string())?;
                 }
             }
@@ -491,7 +527,7 @@ impl WorkspaceMutationCoordinator {
                     }
                 }
                 destination.revalidate()?;
-                fs::create_dir_all(destination.path()).map_err(|error| error.to_string())?;
+                DirectoryAnchor::ensure(destination.path()).map_err(|error| error.to_string())?;
                 let destination = destination.materialized()?;
                 for path in paths {
                     destination.revalidate()?;
@@ -527,10 +563,26 @@ impl WorkspaceMutationCoordinator {
         }
         old.revalidate()?;
         new.revalidate()?;
+        let old_parent = old
+            .path()
+            .parent()
+            .ok_or("Rename source parent is missing")?;
+        let new_parent = new
+            .path()
+            .parent()
+            .ok_or("Rename target parent is missing")?;
+        let old_anchor = DirectoryAnchor::open(old_parent).map_err(|error| error.to_string())?;
+        let new_anchor = DirectoryAnchor::open(new_parent).map_err(|error| error.to_string())?;
+        old.revalidate()?;
+        new.revalidate()?;
+        let old_name = Self::entry_name(old)?.to_os_string();
+        let new_name = Self::entry_name(new)?.to_os_string();
         let affected = self.affected(buffers, old);
         old.revalidate()?;
         new.revalidate()?;
-        fs::rename(old.path(), new.path()).map_err(|error| error.to_string())?;
+        old_anchor
+            .rename_to(&old_name, &new_anchor, &new_name)
+            .map_err(|error| error.to_string())?;
         for (buffer, suffix, previous) in affected {
             let base = if old.is_link() {
                 targets::normalize(new.original().to_owned())
@@ -571,18 +623,23 @@ impl WorkspaceMutationCoordinator {
         }
         entry.revalidate()?;
         if permanent {
-            if entry.is_dir() {
-                if entry.is_link() {
-                    fs::remove_dir(entry.path())
-                } else {
-                    fs::remove_dir_all(entry.path())
-                }
+            let parent = entry
+                .path()
+                .parent()
+                .ok_or("Removal source parent is missing")?;
+            let parent_anchor = DirectoryAnchor::open(parent).map_err(|error| error.to_string())?;
+            let name = Self::entry_name(entry)?.to_os_string();
+            if entry.is_dir() && !entry.is_link() {
+                // 递归删除仍由标准库逐项执行；父目录锚点至少固定了顶层目录项。
+                fs::remove_dir_all(entry.path())
             } else {
-                fs::remove_file(entry.path())
+                parent_anchor.remove(&name, entry.is_dir())
             }
             .map_err(|error| error.to_string())?;
         } else {
-            trash::delete(entry.path()).map_err(|error| error.to_string())?;
+            // 平台回收站 API 只接受完整路径，无法继承已验证父目录句柄；拒绝旧路径副作用，
+            // 避免祖先替换后把工作区外的对象移入回收站。
+            return Err("Non-permanent deletion is unavailable for anchored workspace entries".into());
         }
         for (buffer, _, previous) in affected {
             buffer.relocate(entry.is_link().then_some(previous));
@@ -670,21 +727,24 @@ impl WorkspaceMutationCoordinator {
             if target.path().starts_with(source.path()) {
                 return Err("Unable to copy directory into itself".into());
             }
-            self.parent(&target)?;
+            let (_, parent_anchor) = self.anchor_parent(&target)?;
             source.revalidate()?;
             target.revalidate()?;
-            fs::create_dir(target.path()).map_err(|error| error.to_string())?;
+            parent_anchor
+                .create_dir(Self::target_name(&target)?)
+                .map_err(|error| error.to_string())?;
             source.revalidate()?;
             let output = target.materialized()?;
             ancestors.push((source.clone(), output.clone()));
             pending.push(Step::Leave);
-            for entry in fs::read_dir(source.path()).map_err(|error| error.to_string())? {
-                let entry = entry.map_err(|error| error.to_string())?;
+            let source_anchor =
+                DirectoryAnchor::open(source.path()).map_err(|error| error.to_string())?;
+            for name in source_anchor.entries().map_err(|error| error.to_string())? {
                 output.revalidate()?;
                 // 排队只保留名字；真正进入该项时再构造证明，句柄数量随深度而非目录宽度增长。
                 pending.push(Step::Enter(
-                    entry.path(),
-                    output.path().join(entry.file_name()),
+                    source.path().join(&name),
+                    output.path().join(name),
                 ));
             }
         }
@@ -707,10 +767,12 @@ impl WorkspaceMutationCoordinator {
         if source.same_object(&target) {
             return Err("Source and target refer to the same file".into());
         }
-        let parent_guard = self.parent(&target)?;
+        let (parent_guard, parent_anchor) = self.anchor_parent(&target)?;
+        let (_, source_anchor) = self.anchor_parent(source)?;
         if buffers.find(target.path()).is_some() {
             source.revalidate()?;
-            let document = Document::open(source.path()).map_err(|error| error.to_string())?;
+            let document = Document::open_from_anchor(&source_anchor, Self::target_name(source)?)
+                .map_err(|error| error.to_string())?;
             if document.encoding() == TextEncoding::Binary {
                 return Err("Binary copy cannot overwrite an already open text buffer".into());
             }
@@ -719,25 +781,15 @@ impl WorkspaceMutationCoordinator {
         self.checkpoint(&target)?;
         source.revalidate()?;
         target.revalidate()?;
-        let mut input = fs::File::open(source.path()).map_err(|error| error.to_string())?;
-        let mut temporary = tempfile::NamedTempFile::new_in(
-            target
-                .path()
-                .parent()
-                .ok_or("Missing target parent directory")?,
-        )
-        .map_err(|error| error.to_string())?;
-        std::io::copy(&mut input, &mut temporary).map_err(|error| error.to_string())?;
-        temporary
-            .as_file()
-            .sync_all()
+        let contents = source_anchor
+            .read(Self::target_name(source)?)
             .map_err(|error| error.to_string())?;
         target.revalidate()?;
         parent_guard.revalidate()?;
-        let path = target.path().to_path_buf();
+        let name = Self::target_name(&target)?.to_os_string();
         drop(target);
-        temporary
-            .persist(&path)
+        parent_anchor
+            .atomic_replace(&name, &contents)
             .map_err(|error| error.to_string())?;
         Ok(())
     }

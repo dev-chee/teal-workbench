@@ -26,7 +26,7 @@ nonce 与绑定版本、角色的 HMAC-SHA256 证明持有同一 token；网络�
 
 共享调试会话只在尚未离开刚暂停位置时跳过同一断点，回到该位置会再次暂停；DAP adapter 对正常结束转发一次 `terminated`，仅在连接意外关闭且未收到事件时补发。
 
-各包入口见 [格式化](../../crates/teal-fmt/README.md)、[LSP](../../crates/teal-lsp/README.md)、[DAP](../../crates/teal-dap/README.md)、[VM](../../crates/teal-vm/README.md) 的 README；实现与接入参数以对应源码和 rustdoc 为准。
+各包入口见 [格式化](../../crates/teal-fmt/README.md)、[LSP](../../crates/teal-lsp/README.md)、[DAP](../../crates/teal-dap/README.md)、[VM](https://github.com/dev-chee/teal-lang/blob/v0.1.0/crates/teal-vm/README.md) 的 README；实现与接入参数以对应源码和 rustdoc 为准。
 
 LSP 的文档状态、诊断、语言查询与协议传输分别维护。文档、覆盖加载器和 `teal-text` 行索引共享不可变文本，
 同一次成功编译的分析通过 `Arc` 共享；源码 ID 只在该分析快照内解释。新分析只绑定文本仍一致的文档，

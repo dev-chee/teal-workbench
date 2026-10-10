@@ -18,11 +18,11 @@ Teal 的编辑器与 Agent 工作台。仓库提供 Windows 优先的模态终�
 
 ### 构建前提
 
-- Rust **1.98.1**，使用 Rust 2024 edition，并具备目标平台所需的原生编译与链接环境；仓库通过 `rust-toolchain.toml` 固定工具链。
+- Rust **1.98.1 或更高版本**，使用 Rust 2024 edition，并具备目标平台所需的原生编译与链接环境。
 - Git，以及 [`Cargo.lock`](Cargo.lock) 锁定的 `teal-lang` 源码提交。
 - 运行终端工作台时使用支持交互输入和终端控制序列的终端。
 
-拆仓依赖通过 HTTPS Git 源和锁定 revision `11491542dbf56393a91df53ce68f2a26ec2efad1` 获取；不要求 sibling checkout，也不使用跨仓库 `path` 依赖。语言仓库后续升级必须先更新稳定 revision，再同步锁文件与格式/运行时兼容验收。
+[`Cargo.toml`](Cargo.toml) 中的语言依赖使用 GitHub HTTPS 源和固定 `rev`，[`Cargo.lock`](Cargo.lock) 固定实际提交。发布 tag 只在跨仓门禁全部通过后使用；格式号、消费 feature 和验证状态见 [跨仓兼容矩阵](docs/TEAL-LANG-COMPAT.md)。跨仓库依赖不使用 `path`。
 
 ### 构建并打开文件
 
@@ -81,7 +81,7 @@ cargo build --locked --workspace --bins
 | [`teal-browser`](crates/teal-browser/README.md) | 受管 Chromium 进程、CDP 页面与交互会话。 |
 | [`teal-computer`](crates/teal-computer/README.md) | 桌面可访问性快照、语义操作和单独授权的原始输入。 |
 | [`teal-web`](crates/teal-web/README.md) | 无 JavaScript 的结构化文本网页客户端。 |
-| [`tools/teal-xtask`](tools/teal-xtask/README.md) | 分发、文档、覆盖率和显式门禁等仓库维护工具。 |
+| [`tools/teal-xtask`](tools/teal-xtask/README.md) | 工作台分发、文档、workspace 校验和显式门禁等仓库维护工具。 |
 | [`runtime`](runtime) | 源码 Agent、配置、模板、补全、安装脚本和工作台扩展包。 |
 | [`examples`](examples/README.md) | 语言与 Host 用法、Agent 示例、工作台扩展及组合场景。 |
 | [`docs`](docs) | 架构说明、工作台手册和语言参考。 |
@@ -103,7 +103,7 @@ cargo build --locked --workspace --bins
 - [示例说明](examples/README.md)：示例前提、运行方式和验证边界。
 - [仓库开发约定](AGENTS.md)：架构约束、变更范围、针对性验证、显式门禁和提交要求。
 
-维护工具只验证当前 workbench 的输入。`cargo xtask dist` 默认组装 workbench 工具和 runtime；需要语言工具、`std` 与 `catalog-core` 的完整发行包时使用 `cargo xtask dist --language-root PATH`，该 checkout 必须干净且与锁定 revision 一致。`teal-lang` 的 builtin、knowledge 和 ABI/VM/Host 维护命令由语言仓库负责。验证范围按本次变更确定，完整门禁需显式启动。
+本仓库的维护工具只审计当前 Cargo workspace。`cargo xtask dist` 组装工作台工具和扩展资源；完整发行使用 `cargo xtask dist --language-root <干净且版本一致的语言 checkout>`，由语言仓库构建语言二进制并合并标准包。`builtins`、`knowledge`、ABI/VM/Host coverage 和语言 rustdoc 由 `teal-lang` 独占。验证范围按本次变更确定，完整门禁需显式启动。
 
 ## 许可证
 

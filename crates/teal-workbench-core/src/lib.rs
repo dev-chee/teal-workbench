@@ -1,5 +1,6 @@
 //! Teal 工作台的核心数据模型。
 
+mod anchored;
 mod buffer;
 mod change_set;
 mod command;

@@ -92,13 +92,14 @@ flowchart LR
 
 包级职责、依赖例外和迁移状态应写在对应包的 README 或迁移记录中。本文不维护 crate 的逐项调用路径、目录迁移表或内部协议字段。
 
-## 两个逻辑工作区
+## 两个独立 Cargo 工作区
 
-当前工作区用 [`teal-lang/workspace.toml`](../../teal-lang/workspace.toml) 和
-[`teal-workbench/workspace.toml`](../../teal-workbench/workspace.toml) 固定两个仓库的成员
-闭包。`teal-lang` 包含语言、Embedded Runtime、通用 Agent Runtime、模型协议和核心标准包；
-`teal-workbench` 包含语言工具、编辑器、工作区服务、交互前端和应用扩展包。依赖方向固定
-为 `teal-workbench → teal-lang`，拆仓后的工作台只能使用发布版本或固定 Git tag。
+`teal-lang` 包含语言、Embedded Runtime、通用 Agent Runtime、模型协议和核心标准包；
+`teal-workbench` 包含语言工具、编辑器、工作区服务、交互前端和应用扩展包。各仓库的
+`Cargo.toml` 与 `cargo metadata --locked` 是成员和依赖的事实来源，维护工具不再读取
+拆仓前的 sibling `workspace.toml`。依赖方向固定为 `teal-workbench → teal-lang`，工作台
+使用 HTTPS Git 源和固定提交，通过全部兼容性验证后再切换到固定发布 tag。消费版本与
+持久格式边界见 [跨仓兼容矩阵](TEAL-LANG-COMPAT.md)。
 
 `teal-packages::PackageEnvironment` 同时绑定核心 catalog 与扩展 catalog 的摘要、语言
 edition、package 格式和允许 domain。核心包不能被扩展包覆盖，扩展包不能声明编译器

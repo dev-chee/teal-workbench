@@ -129,7 +129,7 @@ task main() {
 
 ```powershell
 cargo run -p teal -- run hello.tl
-cargo run -p teal -- c hello.tl
+cargo run -p teal -- compile hello.tl
 cargo run -p teal -- run --code ' task main() { print(42); }'
 ```
 
@@ -1214,7 +1214,7 @@ task 调用会立即提交并返回 `Task<T>`；只有后缀 `.await` 才取得�
 但不能使用 `.await`。这些限制按当前函数自身的声明类型检查，不随调用链传播：由 `task` 调用的
 `fn` 仍不是 `task`。`self.think` 与 `self.chat` 只能直接出现在 Agent 的 `task` 方法中；普通 `fn`、普通 CPU
 `task` 和 Agent `fn` 均不能调用。
-分段推进、快照和外部请求的实现契约见 [teal-vm 实现细节](../crates/teal-vm/README.md#vm执行任务值与快照)。
+分段推进、快照和外部请求的实现契约见 [teal-vm 实现细节](https://github.com/dev-chee/teal-lang/blob/v0.1.0/crates/teal-vm/README.md#vm执行任务值与快照)。
 
 `Task::group()` 创建绑定当前父 task 的 TaskGroup。`group.add(task)` 按加入顺序登记子任务，
 `group.join().await` 返回 `Result<none, Error>`，等待全部成员并在首个失败处取消其余未完成成员；未 join 的 group 会以
@@ -2393,7 +2393,7 @@ CLI 选项使用 `clap` 的类型化定义；`teal --help` 说明派发关系，
 `std/user.tl` 提供持久信息交互：`user::ask(prompt).await` 返回 `Result<Answer, Error>`，
 `user::choose(prompt, choices).await` 返回 `Result<ChoiceAnswer, Error>`。业务流程先匹配 Result，
 再匹配回答或跳过枚举；回答不授予权限。工作台 `:runs` 与 `std.runs.inspect/answer_text/answer_choice/skip` 读取和提交回答；恢复仍单独要求当前权限策略批准。
-协议和恢复边界见 [teal-agent 用户交互契约](../crates/teal-agent/README.md#用户交互会话记忆与预算)，完整示例见
+协议和恢复边界见 [teal-agent 用户交互契约](https://github.com/dev-chee/teal-lang/blob/v0.1.0/crates/teal-agent/README.md#用户交互会话记忆与预算)，完整示例见
 [user_interaction.tl](../examples/agent/user_interaction.tl)。
 `teal-run` 支持本节 20.5 描述的全部观测选项；`teal-c` 只执行编译阶段，因此只支持追踪、
 指标及其依赖选项，不收集执行性能剖析。
@@ -2457,7 +2457,7 @@ HIR 阶段会在类型分析完成后删除已证明不可达的语句后缀；�
 读取旧文件。CRC32 只检测意外损坏，不提供来源认证或防篡改能力。当前 CLI 没有
 `compile`/`run-bytecode` 文件命令，Rust 宿主自行保存和读取 `serialize()` 返回的字节。
 
-当前格式号和兼容策略见 [teal-runtime 持久格式契约](../crates/teal-runtime/README.md#持久格式与协议契约)。
+当前格式号和兼容策略见 [teal-runtime 持久格式契约](https://github.com/dev-chee/teal-lang/blob/v0.1.0/crates/teal-runtime/README.md#持久格式与协议契约)。
 旧文件按该策略明确迁移或拒绝，不会猜测旧负载布局。DAP 会请求调试所需的源码信息；
 普通执行和调试执行的语言结果保持一致。
 

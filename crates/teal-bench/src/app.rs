@@ -27,8 +27,8 @@ use teal_workbench_core::{
     WindowId, WindowKind, WindowSet, WorkspaceIntent, WorkspaceMutationCoordinator,
 };
 use teal_lsp_client::{
-    LineIndex, LspClient, LspEvent, ServerConfig, TextDocumentChange, WorkspaceOperation,
-    parse_workspace_edit,
+    parse_workspace_edit, JsonRpcId, LineIndex, LspClient, LspEvent, ServerConfig,
+    TextDocumentChange, WorkspaceOperation,
 };
 use teal_workbench_services::{
     ClipboardBackend, MarkdownDocument, PanelSession, RuntimeCache, RuntimeLock, RuntimeLockStatus,

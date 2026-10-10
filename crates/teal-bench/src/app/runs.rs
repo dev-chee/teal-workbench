@@ -89,10 +89,14 @@ impl teal::RunManagementDriver for BenchRunDriver {
                     .map_err(|error| teal_agent::RunManagementError::Provider(error.to_string()))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            access
-                .prepare_models(requirements, teal_model::Cancellation::new())
-                .await
-                .map_err(|error| teal_agent::RunManagementError::Provider(error.to_string()))?;
+            // 离线恢复必须在读取凭据、刷新认证或发现模型前停止远程预检。
+            // 运行时仍会保留本地模型工具过滤和执行权限，在线模式才准备具体模型。
+            if model_calls_enabled {
+                access
+                    .prepare_models(requirements, teal_model::Cancellation::new())
+                    .await
+                    .map_err(|error| teal_agent::RunManagementError::Provider(error.to_string()))?;
+            }
             let mut host = teal::NativeHostRuntime::builder()
                 .trusted()
                 .trusted()

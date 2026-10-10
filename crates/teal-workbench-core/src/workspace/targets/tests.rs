@@ -1,6 +1,6 @@
 use super::super::WorkspaceMutationCoordinator;
 use super::{ResolvedEntry, Root, file_key, identity_file};
-use crate::BufferStore;
+use crate::{BufferStore, anchored::DirectoryAnchor};
 use std::{fs, path::Path, sync::Arc};
 
 struct TestAuditSink;
@@ -88,6 +88,47 @@ fn resolved_write_rejects_a_replaced_file() {
     assert!(error.contains("changed"), "{error}");
     assert_eq!(fs::read_to_string(&path).unwrap(), "replacement");
     assert_eq!(fs::read_to_string(&displaced).unwrap(), "original");
+}
+
+#[cfg(unix)]
+#[test]
+fn anchored_write_stays_with_original_directory_after_ancestor_replacement() {
+    let fixture = tempfile::tempdir().unwrap();
+    let ancestor = fixture.path().join("ancestor");
+    let displaced = fixture.path().join("displaced");
+    let outside = fixture.path().join("outside");
+    fs::create_dir_all(&ancestor).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(ancestor.join("value.txt"), "before").unwrap();
+
+    let anchor = DirectoryAnchor::open(&ancestor).unwrap();
+    fs::rename(&ancestor, &displaced).unwrap();
+    std::os::unix::fs::symlink(&outside, &ancestor).unwrap();
+
+    anchor
+        .atomic_replace(std::ffi::OsStr::new("value.txt"), b"anchored")
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(displaced.join("value.txt")).unwrap(),
+        "anchored"
+    );
+    assert!(!outside.join("value.txt").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn anchored_directory_rejects_a_symlink_ancestor() {
+    let fixture = tempfile::tempdir().unwrap();
+    let target = fixture.path().join("target");
+    let link = fixture.path().join("link");
+    fs::create_dir_all(&target).unwrap();
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    let error = DirectoryAnchor::open(&link).expect_err("directory links must not be anchors");
+    assert!(matches!(
+        error.raw_os_error(),
+        Some(code) if code == libc::ELOOP || code == libc::ENOTDIR
+    ));
 }
 
 #[test]

@@ -12,7 +12,7 @@ mod framing;
 mod text;
 mod workspace_edit;
 
-pub use client::{LspClient, LspError, LspEvent, ServerConfig};
+pub use client::{JsonRpcId, LspClient, LspError, LspEvent, ServerConfig};
 pub use framing::{LspReader, write_message};
 pub use text::{LineIndex, SemanticToken, SemanticTokenCache};
 pub use workspace_edit::{

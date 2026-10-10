@@ -28,6 +28,31 @@ type PendingResponse = oneshot::Sender<Result<Value, LspError>>;
 
 type PendingMap = Arc<Mutex<HashMap<i64, PendingResponse>>>;
 
+/// JSON-RPC 请求标识；服务器请求允许使用数字或字符串标识。
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum JsonRpcId {
+    /// JSON 数字标识。
+    Number(i64),
+    /// JSON 字符串标识。
+    String(String),
+}
+
+impl JsonRpcId {
+    fn from_value(value: &Value) -> Option<Self> {
+        value
+            .as_i64()
+            .map(Self::Number)
+            .or_else(|| value.as_str().map(|value| Self::String(value.to_owned())))
+    }
+
+    fn to_value(&self) -> Value {
+        match self {
+            Self::Number(value) => Value::from(*value),
+            Self::String(value) => Value::from(value.clone()),
+        }
+    }
+}
+
 /// 一个服务器的可执行文件、环境、根目录和初始化负载。
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
@@ -88,7 +113,7 @@ pub enum LspEvent {
     /// 需要响应的服务器到客户端请求。
     Request {
         /// JSON-RPC 请求标识。
-        id: i64,
+        id: JsonRpcId,
 
         /// JSON-RPC 方法。
         method: String,
@@ -185,10 +210,12 @@ impl LspClient {
             loop {
                 match reader.read_message().await {
                     Ok(Some(message)) => {
-                        if let Some(id) = message.get("id").and_then(Value::as_i64)
+                        if let Some(id) = message.get("id").and_then(JsonRpcId::from_value)
                             && (message.get("result").is_some() || message.get("error").is_some())
                         {
-                            if let Some(sender) = reader_pending.lock().await.remove(&id) {
+                            if let JsonRpcId::Number(id) = id
+                                && let Some(sender) = reader_pending.lock().await.remove(&id)
+                            {
                                 let result = if let Some(error) = message.get("error") {
                                     Err(LspError::Server(error.to_string()))
                                 } else {
@@ -198,7 +225,7 @@ impl LspClient {
                             }
                         } else if let Some(method) = message.get("method").and_then(Value::as_str) {
                             let params = message.get("params").cloned().unwrap_or(Value::Null);
-                            if let Some(id) = message.get("id").and_then(Value::as_i64) {
+                            if let Some(id) = message.get("id").and_then(JsonRpcId::from_value) {
                                 let _ = reader_events.send(LspEvent::Request {
                                     id,
                                     method: method.to_owned(),
@@ -361,20 +388,25 @@ impl LspClient {
     }
 
     /// 成功回复一个服务器到客户端请求。
-    pub async fn respond(&self, id: i64, result: Value) -> Result<(), LspError> {
+    pub async fn respond(&self, id: JsonRpcId, result: Value) -> Result<(), LspError> {
         write_message(
             &mut *self.writer.lock().await,
-            &json!({"jsonrpc":"2.0","id":id,"result":result}),
+            &json!({"jsonrpc":"2.0","id":id.to_value(),"result":result}),
         )
         .await?;
         Ok(())
     }
 
     /// 以一个 JSON-RPC 错误回复服务器到客户端请求。
-    pub async fn respond_error(&self, id: i64, code: i32, message: &str) -> Result<(), LspError> {
+    pub async fn respond_error(
+        &self,
+        id: JsonRpcId,
+        code: i32,
+        message: &str,
+    ) -> Result<(), LspError> {
         write_message(
             &mut *self.writer.lock().await,
-            &json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}}),
+            &json!({"jsonrpc":"2.0","id":id.to_value(),"error":{"code":code,"message":message}}),
         )
         .await?;
         Ok(())
@@ -456,4 +488,28 @@ fn client_capabilities() -> Value {
         "window": {"workDoneProgress": true, "showMessage": {"messageActionItem":{"additionalPropertiesSupport":true}}},
         "general": {"positionEncodings":["utf-16"]}
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::JsonRpcId;
+    use serde_json::json;
+
+    #[test]
+    fn preserves_numeric_and_string_request_ids() {
+        assert_eq!(JsonRpcId::from_value(&json!(7)), Some(JsonRpcId::Number(7)));
+        assert_eq!(
+            JsonRpcId::from_value(&json!("edit-7")),
+            Some(JsonRpcId::String("edit-7".into()))
+        );
+        assert_eq!(JsonRpcId::from_value(&json!(null)), None);
+    }
+
+    #[test]
+    fn serializes_string_request_ids_without_conversion() {
+        assert_eq!(
+            JsonRpcId::String("edit-7".into()).to_value(),
+            json!("edit-7")
+        );
+    }
 }

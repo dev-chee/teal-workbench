@@ -5,16 +5,15 @@
 
 use std::{
     fs,
-    io::Write,
     path::{Path, PathBuf},
 };
 
 use ropey::Rope;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tempfile::NamedTempFile;
 use thiserror::Error;
 
+use crate::anchored::DirectoryAnchor;
 use crate::{SelectionSet, Transaction, TransactionError, UndoTree};
 
 /// 在编辑和保存期间保留的磁盘文本表示。
@@ -121,6 +120,19 @@ impl Document {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DocumentError> {
         let path = path.as_ref().to_path_buf();
         let bytes = fs::read(&path)?;
+        Self::from_bytes(Some(path), bytes)
+    }
+
+    /// 从已锚定目录读取文档，避免再次按完整路径解析祖先目录。
+    pub(crate) fn open_from_anchor(
+        anchor: &DirectoryAnchor,
+        name: &std::ffi::OsStr,
+    ) -> Result<Self, DocumentError> {
+        let bytes = anchor.read(name)?;
+        Self::from_bytes(Some(anchor.path().join(name)), bytes)
+    }
+
+    fn from_bytes(path: Option<PathBuf>, bytes: Vec<u8>) -> Result<Self, DocumentError> {
         let stamp = FileStamp {
             hash: digest(&bytes),
         };
@@ -131,7 +143,7 @@ impl Document {
         let normalized = normalize_line_endings(&decoded);
 
         Ok(Self {
-            path: Some(path),
+            path,
             text: Rope::from_str(&normalized),
             encoding,
             line_ending,
@@ -271,32 +283,47 @@ impl Document {
     /// 仅保存到同一已知路径且能读取当前字节时比较旧基线；另存为目标的覆盖确认与工作区检查由调用方负责。
     /// 只读状态、检测到外部变化或文件操作失败均返回 [`SaveError`]。
     pub fn save_to(&mut self, path: impl AsRef<Path>) -> Result<(), SaveError> {
+        let path = path.as_ref();
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        let anchor = DirectoryAnchor::ensure(parent)?;
+        let name = path.file_name().ok_or(SaveError::MissingPath)?;
+        self.save_to_anchor(&anchor, name)
+    }
+
+    /// 使用已验证父目录保存；叶路径不会再次解析祖先目录。
+    ///
+    /// 工作区协调器在调用前持有 [`DirectoryAnchor`]，因为仅复核字符串路径后再调用
+    /// `NamedTempFile::persist` 仍允许并发进程替换祖先目录。锚点保存先在同一目录刷新临时
+    /// 文件，再以目录相对的原子替换提交；文档基线读取也沿用同一锚点。
+    pub(crate) fn save_to_anchor(
+        &mut self,
+        anchor: &DirectoryAnchor,
+        name: &std::ffi::OsStr,
+    ) -> Result<(), SaveError> {
         if self.read_only {
             return Err(SaveError::ReadOnly);
         }
 
-        let path = path.as_ref();
-        if self.path.as_deref() == Some(path)
+        let path = anchor.path().join(name);
+        let same_path = self.path.as_deref().is_some_and(|current| {
+            current == path
+                || std::fs::canonicalize(current)
+                    .ok()
+                    .is_some_and(|resolved| resolved == path)
+        });
+        if same_path
             && let Some(baseline) = &self.baseline
-            && let Ok(current) = fs::read(path)
+            && let Ok(current) = anchor.read(name)
             && digest(&current) != baseline.hash
         {
             return Err(SaveError::ChangedOnDisk);
         }
 
-        // 临时文件与目标位于同一目录，确保保存时可原子替换。
         let bytes = self.encoded_bytes();
-        let parent = path.parent().unwrap_or_else(|| Path::new("."));
-        fs::create_dir_all(parent)?;
-        let mut temporary = NamedTempFile::new_in(parent)?;
-        temporary.write_all(&bytes)?;
-        temporary.as_file_mut().sync_all()?;
-        temporary
-            .persist(path)
-            .map_err(|error| SaveError::Io(error.error))?;
+        anchor.atomic_replace(name, &bytes)?;
 
         // 写入失败时不得改变磁盘基线和未保存历史标记。
-        self.path = Some(path.to_path_buf());
+        self.path = Some(path);
         self.baseline = Some(FileStamp {
             hash: digest(&bytes),
         });
@@ -313,7 +340,7 @@ impl Document {
         self.path = path;
     }
 
-    fn encoded_bytes(&self) -> Vec<u8> {
+    pub(crate) fn encoded_bytes(&self) -> Vec<u8> {
         let text = if self.line_ending == LineEnding::Lf {
             self.text.to_string()
         } else {

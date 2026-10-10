@@ -39,9 +39,7 @@ pub fn fetch_blocking_with_audit(
     context: &teal_security::AuditContext,
 ) -> Result<WebDocument, WebError> {
     let url = Url::parse(input)?;
-    if !matches!(url.scheme(), "http" | "https") {
-        return Err(WebError::Url(url::ParseError::RelativeUrlWithoutBase));
-    }
+    validate_web_url(&url)?;
     let audit = begin_web(context, teal_security::Action::Browser)?;
     let result = fetch_blocking_url(url);
     audit
@@ -117,11 +115,7 @@ fn redirect_target(
     };
     let location = location.to_str().map_err(|_| WebError::InvalidRedirect)?;
     let target = base.join(location).map_err(|_| WebError::InvalidRedirect)?;
-    if !matches!(target.scheme(), "http" | "https")
-        || !target.username().is_empty()
-        || target.password().is_some()
-        || target.as_str().len() > 16_384
-    {
+    if validate_web_url(&target).is_err() || target.as_str().len() > 16_384 {
         return Err(WebError::InvalidRedirect);
     }
     Ok(Some(target))
@@ -206,6 +200,9 @@ impl WebDocument {
                 let Ok(target) = url.join(href) else {
                     continue;
                 };
+                if validate_web_url(&target).is_err() {
+                    continue;
+                }
                 let label = normalized_text(anchor);
                 let key = (label.clone(), target.clone());
                 if seen_links.insert(key) {
@@ -264,6 +261,9 @@ pub enum WebError {
     /// Location 无法解析为无凭据的 HTTP/HTTPS 目标。
     #[error("Redirect target is not a valid HTTP/HTTPS URL without credentials")]
     InvalidRedirect,
+    /// 外部浏览器只能接收无凭据的 HTTP/HTTPS URL。
+    #[error("External URL must use HTTP or HTTPS without credentials")]
+    InvalidExternalUrl,
     /// 无法解析 URL。
     #[error("Invalid URL: {0}")]
     Url(#[from] url::ParseError),
@@ -387,9 +387,7 @@ impl TextBrowser {
         input: &str,
     ) -> Result<&WebDocument, WebError> {
         let url = Url::parse(input)?;
-        if !matches!(url.scheme(), "http" | "https") {
-            return Err(WebError::Url(url::ParseError::RelativeUrlWithoutBase));
-        }
+        validate_web_url(&url)?;
 
         let mut response = self.client.request(method.clone(), url).send().await?;
         if let Some(target) =
@@ -477,6 +475,7 @@ fn open_url_external_audited(
     url: &Url,
     context: &teal_security::AuditContext,
 ) -> Result<(), WebError> {
+    validate_web_url(url).map_err(|_| WebError::InvalidExternalUrl)?;
     let audit = begin_web(context, teal_security::Action::Browser)?;
     let result = open_url_external_inner(url);
     audit
@@ -503,6 +502,16 @@ fn open_url_external_inner(url: &Url) -> Result<(), WebError> {
         return Err(WebError::External(std::io::Error::other(
             "System browser failed to return",
         )));
+    }
+    Ok(())
+}
+
+fn validate_web_url(url: &Url) -> Result<(), WebError> {
+    if !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(WebError::InvalidExternalUrl);
     }
     Ok(())
 }
@@ -545,6 +554,7 @@ mod tests {
 
     use super::{
         DEFAULT_MAX_BYTES, TextBrowser, WebDocument, fetch_blocking, fetch_blocking_with_audit,
+        validate_web_url,
     };
 
     #[derive(Default)]
@@ -654,7 +664,7 @@ mod tests {
         let document = WebDocument::from_html(
             Url::parse("https://example.test/docs/").unwrap(),
             200,
-            r#"<html><head><title>Docs</title><script>bad()</script></head><body><h1>Guide</h1><p>Hello <a href="next">next</a>.</p><pre>fn main() {}</pre><ul><li>One</li></ul></body></html>"#,
+            r#"<html><head><title>Docs</title><script>bad()</script></head><body><h1>Guide</h1><p>Hello <a href="next">next</a> <a href="file:///tmp/secret">secret</a> <a href="https://user:pass@example.test/private">private</a>.</p><pre>fn main() {}</pre><ul><li>One</li></ul></body></html>"#,
         );
         assert_eq!(document.title, "Docs");
         assert!(document.lines.iter().any(|line| line == "# Guide"));
@@ -663,6 +673,18 @@ mod tests {
         assert_eq!(
             document.links[0].url.as_str(),
             "https://example.test/docs/next"
+        );
+        assert_eq!(document.links.len(), 1);
+    }
+
+    #[test]
+    fn external_urls_require_http_or_https_without_credentials() {
+        assert!(validate_web_url(&Url::parse("https://example.test/path").unwrap()).is_ok());
+        assert!(validate_web_url(&Url::parse("file:///tmp/secret").unwrap()).is_err());
+        assert!(validate_web_url(&Url::parse("mailto:user@example.test").unwrap()).is_err());
+        assert!(
+            validate_web_url(&Url::parse("https://user:pass@example.test/private").unwrap())
+                .is_err()
         );
     }
 

@@ -3,6 +3,7 @@
 //! `BufferHandle` 使用单线程共享所有权，不能直接移交后台线程；后台任务接收完整文档副本。
 //! 普通克隆保留同一视图选择区，`fork_view` 才创建独立选择区。
 
+use crate::anchored::DirectoryAnchor;
 use crate::{
     Document, LineEnding, SaveError, SelectionSet, TextEdit, TextEncoding, Transaction,
     TransactionError,
@@ -277,6 +278,18 @@ impl BufferHandle {
     /// 原子保存到新路径。
     pub fn save_to(&self, path: impl AsRef<Path>) -> Result<(), SaveError> {
         self.inner.borrow_mut().document.save_to(path)
+    }
+
+    /// 使用已验证父目录保存当前文档，保持工作区文件事务的目录锚定。
+    pub(crate) fn save_to_anchor(
+        &self,
+        anchor: &DirectoryAnchor,
+        name: &std::ffi::OsStr,
+    ) -> Result<(), SaveError> {
+        self.inner
+            .borrow_mut()
+            .document
+            .save_to_anchor(anchor, name)
     }
 
     /// 在协调的资源操作后更新后备标识，保留编辑。

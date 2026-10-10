@@ -20,7 +20,7 @@ Core 示例可在没有 Agent 服务、模型认证和本机扩展的环境中�
 
 ```powershell
 cargo run -p teal -- run examples/core/literals_and_variables.tl
-cargo run -p teal -- c examples/core/type_syntax.tl
+cargo run -p teal -- compile examples/core/type_syntax.tl
 cargo run -p teal -- run examples/core/functions_and_closures.tl --profile target/functions.pb.gz
 cargo run -p teal -- run examples/core/task_main.tl
 ```
@@ -52,11 +52,11 @@ cargo run -p teal -- run examples/core/task_main.tl
 
 ## Tier Host
 
-Host 示例区分实现支持、函数注册、操作授权和动态资源范围。启用 Extension 或登记
+以下命令要求已按 [跨仓兼容矩阵](../docs/TEAL-LANG-COMPAT.md) 组装语言 sibling binaries 和标准包。Host 示例区分实现支持、函数注册、操作授权和动态资源范围。启用 Extension 或登记
 函数不会自动开放文件、环境、进程或动态库资源。
 
 ```powershell
-cargo build -p teal --bin teal
+cargo build --locked --workspace --bins
 $tealExampleCli = (Resolve-Path target/debug/teal.exe).Path
 $permissionFile = "C:/path/to/permissions.toml"
 
@@ -81,11 +81,7 @@ Remove-Item -LiteralPath $tealExampleParent
 `process.tl` 使用当前 Teal 可执行文件覆盖命令、运行、启动、查询、等待、终止、解析与查找，
 不依赖 shell。
 
-`safe_host_declarations.tl` 由同目录的 Rust `host_registry.rs` 提供实现。运行：
-
-```powershell
-cargo run -p teal --example host_registry
-```
+`safe_host_declarations.tl` 由同目录的 Rust `host_registry.rs` 提供实现。该文件是嵌入宿主示例源码；当前工作台根包没有登记 `host_registry` Cargo example，需在消费 `teal-lang` 的宿主 package 中登记并运行。
 
 它先证明缺少授权会在加载阶段失败且没有副作用，再以完全匹配的签名和 Capability 执行。
 `dylib_declarations.tl` 只做编译检查；真实动态库执行仍依赖平台 C ABI、库文件、符号和
@@ -95,11 +91,11 @@ cargo run -p teal --example host_registry
 服务：`http_protocol.tl` 展示 URL 编码、请求体和 JSON 构造，`oauth_protocol.tl` 展示 token
 解码、错误分支和公开配置形状。发送请求、访问远端仓库、PKCE 授权、回环回调和文档导入需要
 `network.http`、`process.spawn`、`network.oauth_callback` 等具体授权，由对应的 check 入口
-和 `crates/teal-runtime/tests/general_packages.rs` 的宿主夹具验证，不属于离线示例输出。
+和 语言仓库的 [`general_packages.rs`](https://github.com/dev-chee/teal-lang/blob/v0.1.0/crates/teal-runtime/tests/general_packages.rs) 宿主夹具验证，不属于离线示例输出。
 
 ## Tier Agent 与 Core task
 
-`graph_agents.tl` 与 `agent_control.tl` 是不含模型调用的 `class`/普通 `task` 示例，
+`class_task_parallel.tl` 与 `task_status.tl` 是不含模型调用的 `class`/普通 `task` 示例，
 不绑定模型供应商，可离线运行：
 
 ```powershell
@@ -124,7 +120,7 @@ cargo run -p teal -- run examples/core/task_status.tl
 
 ```powershell
 cargo run -p teal -- auth login codex --method codex-cli
-cargo run -p teal -- c examples/agent/model_options.tl --runtime-profile agent
+cargo run -p teal -- compile examples/agent/model_options.tl --runtime-profile agent
 cargo run -p teal -- run examples/agent/model_options.tl
 ```
 
@@ -175,11 +171,8 @@ cargo run -p teal -- compile examples/showcases/dhe/dhe.tl --runtime-profile age
 和需要外部服务的 `external`。
 
 ```powershell
-cargo test -p teal --test examples
-cargo test -p teal --example host_registry
 cargo test -p teal-workbench-automation shipped_bench_examples_prepare_and_execute
 ```
 
-自动门禁会递归比较目录与 manifest、验证 coverage 引用、执行可运行示例、检查失败边界，并验证
-Host 缺少 Capability 或资源时在副作用前拒绝。编译通过不等于真实模型、平台动态库、终端交互、
+语言示例 manifest 与 coverage 的完整执行属于语言发行验收；当前工作台只登记工作台扩展场景测试。Host 缺少 Capability 或资源时必须在副作用前拒绝。编译通过不等于真实模型、平台动态库、终端交互、
 浏览器服务、远程运行或外部业务效果已经通过。

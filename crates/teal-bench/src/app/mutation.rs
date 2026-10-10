@@ -4,12 +4,14 @@
 //! 此处的保留覆盖已登记缓冲区；文件打开与退出排空遵循 `teal-bench` README 的恢复边界。
 
 use super::{
-    App, AppPanel, Arc, Duration, HashMap, LspClient, MutationKind, PanelId, Path, PathBuf,
-    RuntimeEvent, Severity, WorkspaceIntent, WorkspaceMutationCoordinator, WorkspaceOperation,
-    ensure_workspace_path, mutation_text, oneshot, parse_workspace_edit,
+    App, AppPanel, Arc, Duration, HashMap, JsonRpcId, LspClient, MutationKind, PanelId, Path,
+    PathBuf, RuntimeEvent, Severity, WorkspaceIntent, WorkspaceMutationCoordinator,
+    WorkspaceOperation, ensure_workspace_path, mutation_text, oneshot, parse_workspace_edit,
 };
-use teal_workbench_core::{BufferHandle, BufferId, Document, DocumentChange, TextEdit, Transaction};
 use std::collections::VecDeque;
+use teal_workbench_core::{
+    BufferHandle, BufferId, Document, DocumentChange, TextEdit, Transaction,
+};
 
 /// 工作线程可执行的操作描述，不持有只能在界面线程使用的缓冲区句柄。
 #[derive(Clone)]
@@ -68,7 +70,7 @@ struct Job {
     work: Work,
     panel: Option<PanelId>,
     response: Option<oneshot::Sender<Result<(), String>>>,
-    lsp: Option<(Arc<LspClient>, i64)>,
+    lsp: Option<(Arc<LspClient>, JsonRpcId)>,
     /// LSP 编辑入队时的版本快照，开始执行前必须重新核对。
     versions: Vec<(BufferId, u64)>,
 }
@@ -114,7 +116,7 @@ impl App {
         work: Work,
         panel: Option<PanelId>,
         response: Option<oneshot::Sender<Result<(), String>>>,
-        lsp: Option<(Arc<LspClient>, i64)>,
+        lsp: Option<(Arc<LspClient>, JsonRpcId)>,
     ) {
         if self.io.is_full() {
             if let Some(response) = response {

@@ -43,8 +43,8 @@ impl Identity {
 fn identity_file(path: &Path, entry: bool) -> std::io::Result<File> {
     use std::os::windows::fs::OpenOptionsExt;
     use windows_sys::Win32::Storage::FileSystem::{
-        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_READ,
-        FILE_SHARE_WRITE, FILE_SHARE_DELETE,
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE,
+        FILE_SHARE_READ, FILE_SHARE_WRITE,
     };
     fs::OpenOptions::new()
         .read(true)
@@ -65,7 +65,7 @@ fn identity_file(path: &Path, entry: bool) -> std::io::Result<File> {
 fn file_key(file: &File) -> std::io::Result<FileKey> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
-        GetFileInformationByHandleEx, FileIdInfo, FILE_ID_INFO,
+        FILE_ID_INFO, FileIdInfo, GetFileInformationByHandleEx,
     };
     let mut info = FILE_ID_INFO::default();
     // SAFETY: 文件句柄在调用期间有效；缓冲区类型和长度对应 FileIdInfo。
@@ -383,7 +383,9 @@ impl ResolvedEntry {
         let link = metadata
             .as_ref()
             .is_some_and(|value| value.file_type().is_symlink());
-        let directory = metadata.as_ref().is_some_and(entry_is_directory);
+        let directory = metadata
+            .as_ref()
+            .is_some_and(|value| entry_is_directory(&path, value));
         Ok(Self {
             parent,
             path,
@@ -440,7 +442,7 @@ fn optional_metadata(path: &Path) -> Result<Option<fs::Metadata>, String> {
     }
 }
 
-fn entry_is_directory(metadata: &fs::Metadata) -> bool {
+fn entry_is_directory(path: &Path, metadata: &fs::Metadata) -> bool {
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
@@ -449,6 +451,8 @@ fn entry_is_directory(metadata: &fs::Metadata) -> bool {
     #[cfg(not(windows))]
     {
         metadata.is_dir()
+            || (metadata.file_type().is_symlink()
+                && fs::metadata(path).is_ok_and(|target| target.is_dir()))
     }
 }
 
