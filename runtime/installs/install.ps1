@@ -13,19 +13,14 @@ $script:InstallFormatVersion = 1
 $script:RuntimeManifestFormatVersion = 1
 $script:ExecutableNames = @(
     'teal.exe',
-    'teal-c.exe',
     'teal-run.exe',
-    'teal-test.exe',
-    'teal-auth.exe',
-    'teal-model.exe',
     'teal-perm.exe',
     'teal-config.exe',
-    'teal-knowledge.exe',
     'teal-bench.exe',
+    'teal-knowledge.exe',
     'teal-fmt.exe',
     'teal-lsp.exe',
-    'teal-dap.exe',
-    'teal-audit.exe'
+    'teal-dap.exe'
 )
 
 function Get-NormalizedPath {

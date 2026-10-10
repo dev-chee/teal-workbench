@@ -8,8 +8,6 @@ license.workspace = true
 publish = false
 
 [dependencies]
-teal-security = { workspace = true, default-features = false }
-bincode.workspace = true
 flate2.workspace = true
 quote.workspace = true
 serde.workspace = true
@@ -17,12 +15,7 @@ serde_json.workspace = true
 sha2.workspace = true
 syn.workspace = true
 tar.workspace = true
-thiserror.workspace = true
 toml.workspace = true
-teal-compiler.workspace = true
-teal-knowledge.workspace = true
-teal-packages.workspace = true
-teal-utils.workspace = true
 zip.workspace = true
 
 [lints]

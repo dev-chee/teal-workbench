@@ -15,74 +15,14 @@ use source::{Audit, ProductCrate};
 /// API 站点包含的产品库及其源码入口。
 pub const PRODUCTS: &[ProductCrate] = &[
     ProductCrate {
-        package: "teal-security",
-        rustdoc_name: "teal_security",
-        root: "crates/teal-security/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-security",
-        rustdoc_name: "teal_security",
-        root: "crates/teal-security/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-core",
-        rustdoc_name: "teal_core",
-        root: "crates/teal-core/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-packages",
-        rustdoc_name: "teal_packages",
-        root: "crates/teal-packages/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-knowledge",
-        rustdoc_name: "teal_knowledge",
-        root: "crates/teal-knowledge/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-runtime",
-        rustdoc_name: "teal_runtime",
-        root: "crates/teal-runtime/src/lib.rs",
-    },
-    ProductCrate {
         package: "teal-bench",
         rustdoc_name: "teal_bench",
         root: "crates/teal-bench/src/lib.rs",
     },
     ProductCrate {
-        package: "teal-workbench-automation",
-        rustdoc_name: "teal_workbench_automation",
-        root: "crates/teal-workbench-automation/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-workbench-core",
-        rustdoc_name: "teal_workbench_core",
-        root: "crates/teal-workbench-core/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-lsp-client",
-        rustdoc_name: "teal_lsp_client",
-        root: "crates/teal-lsp-client/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-workbench-services",
-        rustdoc_name: "teal_workbench_services",
-        root: "crates/teal-workbench-services/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-text",
-        rustdoc_name: "teal_text",
-        root: "crates/teal-text/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-utils",
-        rustdoc_name: "teal_utils",
-        root: "crates/teal-utils/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-web",
-        rustdoc_name: "teal_web",
-        root: "crates/teal-web/src/lib.rs",
+        package: "teal-dap",
+        rustdoc_name: "teal_dap",
+        root: "crates/teal-dap/src/lib.rs",
     },
     ProductCrate {
         package: "teal-browser",
@@ -95,49 +35,9 @@ pub const PRODUCTS: &[ProductCrate] = &[
         root: "crates/teal-computer/src/lib.rs",
     },
     ProductCrate {
-        package: "teal-agent",
-        rustdoc_name: "teal_agent",
-        root: "crates/teal-agent/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-model",
-        rustdoc_name: "teal_model",
-        root: "crates/teal-model/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-host",
-        rustdoc_name: "teal_host",
-        root: "crates/teal-host/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-workspace",
-        rustdoc_name: "teal_workspace",
-        root: "crates/teal-workspace/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-config",
-        rustdoc_name: "teal_config",
-        root: "crates/teal-config/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-abi",
-        rustdoc_name: "teal_abi",
-        root: "crates/teal-abi/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-compiler",
-        rustdoc_name: "teal_compiler",
-        root: "crates/teal-compiler/src/lib.rs",
-    },
-    ProductCrate {
         package: "teal-fmt",
         rustdoc_name: "teal_fmt",
         root: "crates/teal-fmt/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-vm",
-        rustdoc_name: "teal_vm",
-        root: "crates/teal-vm/src/lib.rs",
     },
     ProductCrate {
         package: "teal-lsp",
@@ -145,9 +45,39 @@ pub const PRODUCTS: &[ProductCrate] = &[
         root: "crates/teal-lsp/src/lib.rs",
     },
     ProductCrate {
-        package: "teal-dap",
-        rustdoc_name: "teal_dap",
-        root: "crates/teal-dap/src/lib.rs",
+        package: "teal-lsp-client",
+        rustdoc_name: "teal_lsp_client",
+        root: "crates/teal-lsp-client/src/lib.rs",
+    },
+    ProductCrate {
+        package: "teal-text",
+        rustdoc_name: "teal_text",
+        root: "crates/teal-text/src/lib.rs",
+    },
+    ProductCrate {
+        package: "teal-web",
+        rustdoc_name: "teal_web",
+        root: "crates/teal-web/src/lib.rs",
+    },
+    ProductCrate {
+        package: "teal-workbench-automation",
+        rustdoc_name: "teal_workbench_automation",
+        root: "crates/teal-workbench-automation/src/lib.rs",
+    },
+    ProductCrate {
+        package: "teal-workbench-core",
+        rustdoc_name: "teal_workbench_core",
+        root: "crates/teal-workbench-core/src/lib.rs",
+    },
+    ProductCrate {
+        package: "teal-workbench-services",
+        rustdoc_name: "teal_workbench_services",
+        root: "crates/teal-workbench-services/src/lib.rs",
+    },
+    ProductCrate {
+        package: "teal-workspace",
+        rustdoc_name: "teal_workspace",
+        root: "crates/teal-workspace/src/lib.rs",
     },
 ];
 

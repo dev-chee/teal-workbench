@@ -7,50 +7,25 @@ use super::{Options, PRODUCTS, validate_product_manifest, workspace_root};
 #[test]
 fn product_site_contains_current_product_libraries() {
     for package in [
-        "teal-packages",
+        "teal-bench",
         "teal-browser",
         "teal-computer",
-        "teal-model",
-        "teal-security",
-        "teal-security",
-        "teal-knowledge",
+        "teal-dap",
+        "teal-fmt",
+        "teal-lsp",
+        "teal-lsp-client",
         "teal-text",
+        "teal-web",
+        "teal-workbench-automation",
+        "teal-workbench-core",
+        "teal-workbench-services",
+        "teal-workspace",
     ] {
         assert!(
             PRODUCTS.iter().any(|product| product.package == package),
             "{package}"
         );
     }
-    assert!(
-        PRODUCTS
-            .iter()
-            .any(|product| product.package == "teal-core")
-    );
-    assert!(
-        PRODUCTS
-            .iter()
-            .any(|product| product.package == "teal-agent")
-    );
-    assert!(
-        PRODUCTS
-            .iter()
-            .any(|product| product.package == "teal-host")
-    );
-    assert!(
-        PRODUCTS
-            .iter()
-            .any(|product| product.package == "teal-workspace")
-    );
-    assert!(
-        PRODUCTS
-            .iter()
-            .any(|product| product.package == "teal-runtime")
-    );
-    assert!(
-        PRODUCTS
-            .iter()
-            .any(|product| product.package == "teal-bench")
-    );
     assert!(
         PRODUCTS
             .iter()
@@ -96,7 +71,21 @@ fn platform_product_crates_use_current_names_and_exclude_retired_packages() {
         assert_eq!(product.root, root, "{package}");
     }
 
-    for obsolete_package in ["teal-bench-browser", "teal-bench-computer"] {
+    for obsolete_package in [
+        "teal-abi",
+        "teal-agent",
+        "teal-compiler",
+        "teal-config",
+        "teal-core",
+        "teal-host",
+        "teal-knowledge",
+        "teal-model",
+        "teal-packages",
+        "teal-runtime",
+        "teal-security",
+        "teal-utils",
+        "teal-vm",
+    ] {
         assert!(
             PRODUCTS
                 .iter()

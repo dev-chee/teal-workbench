@@ -18,11 +18,11 @@ Teal 的编辑器与 Agent 工作台。仓库提供 Windows 优先的模态终�
 
 ### 构建前提
 
-- Rust **1.98.1 或更高版本**，使用 Rust 2024 edition，并具备目标平台所需的原生编译与链接环境。
+- Rust **1.98.1**，使用 Rust 2024 edition，并具备目标平台所需的原生编译与链接环境；仓库通过 `rust-toolchain.toml` 固定工具链。
 - Git，以及 [`Cargo.lock`](Cargo.lock) 锁定的 `teal-lang` 源码提交。
 - 运行终端工作台时使用支持交互输入和终端控制序列的终端。
 
-当前处于拆仓过渡阶段：[`Cargo.toml`](Cargo.toml) 中的 `teal-lang` 依赖使用 `git = "file:///D:/teal-lang"` 和 `version = "0.1.0"`，实际提交由锁文件固定。因此，当前清单需要该本地 Git 源可用；在其他机器使用前，应将依赖源迁移到可访问的发布版本或固定 Git tag，并同步锁文件。跨仓库依赖不使用 `path`。
+拆仓依赖通过 HTTPS Git 源和锁定 revision `11491542dbf56393a91df53ce68f2a26ec2efad1` 获取；不要求 sibling checkout，也不使用跨仓库 `path` 依赖。语言仓库后续升级必须先更新稳定 revision，再同步锁文件与格式/运行时兼容验收。
 
 ### 构建并打开文件
 
@@ -103,7 +103,7 @@ cargo build --locked --workspace --bins
 - [示例说明](examples/README.md)：示例前提、运行方式和验证边界。
 - [仓库开发约定](AGENTS.md)：架构约束、变更范围、针对性验证、显式门禁和提交要求。
 
-维护工具仍包含拆仓前的路径假设。执行分发、rustdoc、workspace 或 builtin 维护命令前，先确认其输入路径和依赖属于当前仓库；本仓库不生成 `teal-lang` 的标准库或 builtin 制品。验证范围按本次变更确定，完整门禁需显式启动。
+维护工具只验证当前 workbench 的输入。`cargo xtask dist` 默认组装 workbench 工具和 runtime；需要语言工具、`std` 与 `catalog-core` 的完整发行包时使用 `cargo xtask dist --language-root PATH`，该 checkout 必须干净且与锁定 revision 一致。`teal-lang` 的 builtin、knowledge 和 ABI/VM/Host 维护命令由语言仓库负责。验证范围按本次变更确定，完整门禁需显式启动。
 
 ## 许可证
 

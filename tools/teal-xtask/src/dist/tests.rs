@@ -7,9 +7,9 @@ use std::{
 };
 
 use super::{
-    EntryKind, MANIFEST_FORMAT_VERSION, RuntimeManifest, assemble_distribution, classify_entry,
-    checked_target_path, create_platform_archive, create_tar_archive, create_zip_archive,
-    executable_name, run, sha256_file, validate_bundle_name,
+    EntryKind, MANIFEST_FORMAT_VERSION, RuntimeManifest, assemble_distribution,
+    checked_target_path, classify_entry, create_platform_archive, create_tar_archive,
+    create_zip_archive, executable_name, run, sha256_file, validate_bundle_name,
 };
 /// 为每个测试创建并清理独立目录。
 struct Fixture {
@@ -18,7 +18,7 @@ struct Fixture {
 }
 
 impl Fixture {
-    /// 创建包含运行时资源和十四项伪 release 二进制的样本。
+    /// 创建包含运行时资源和九项伪 release 二进制的样本。
     fn new(name: &str) -> Self {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -39,19 +39,14 @@ impl Fixture {
         fixture.write("runtime/assets/logo.bin", &[0, 1, 2, 255]);
         for binary in [
             "teal",
-            "teal-c",
             "teal-run",
-            "teal-test",
-            "teal-auth",
-            "teal-model",
             "teal-perm",
             "teal-config",
-            "teal-knowledge",
             "teal-bench",
+            "teal-knowledge",
             "teal-fmt",
             "teal-lsp",
             "teal-dap",
-            "teal-audit",
         ] {
             let path = Path::new("binaries").join(executable_name(binary));
             fixture.write(path, binary.as_bytes());
@@ -91,19 +86,14 @@ fn assembly_replaces_stale_output_and_writes_sorted_hashes() {
         b"teal"
     );
     for binary in [
-        "teal-c",
         "teal-run",
-        "teal-test",
-        "teal-auth",
-        "teal-model",
         "teal-perm",
         "teal-config",
-        "teal-knowledge",
         "teal-bench",
+        "teal-knowledge",
         "teal-fmt",
         "teal-lsp",
         "teal-dap",
-        "teal-audit",
     ] {
         assert_eq!(
             fs::read(bundle.join(executable_name(binary))).unwrap(),
@@ -180,19 +170,14 @@ fn both_archives_contain_one_complete_top_level_bundle() {
     ];
     expected.extend(
         [
-            "teal-c",
             "teal-run",
-            "teal-test",
-            "teal-auth",
-            "teal-model",
             "teal-perm",
             "teal-config",
-            "teal-knowledge",
             "teal-bench",
+            "teal-knowledge",
             "teal-fmt",
             "teal-lsp",
             "teal-dap",
-            "teal-audit",
         ]
         .map(|binary| format!("teal-test/{binary}{suffix}")),
     );
@@ -261,9 +246,9 @@ fn bundle_names_cannot_escape_the_distribution_root() {
 }
 
 #[test]
-fn dist_command_rejects_all_arguments() {
+fn dist_command_rejects_unknown_arguments() {
     let error = run(vec!["--output".to_owned(), "elsewhere".to_owned()]).unwrap_err();
-    assert!(error.to_string().contains("does not accept parameters"));
+    assert!(error.to_string().contains("Usage:"));
 }
 
 #[test]

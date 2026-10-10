@@ -19,26 +19,28 @@ const MANIFEST_FORMAT_VERSION: u32 = 1;
 /// 发行版产品二进制及其 Cargo 所属 package。
 pub(crate) const PRODUCTS: &[(&str, &str)] = &[
     ("teal", "teal"),
-    ("teal-runtime", "teal-c"),
     ("teal-workbench-services", "teal-run"),
-    ("teal-runtime", "teal-test"),
-    ("teal-model", "teal-auth"),
-    ("teal-model", "teal-model"),
     ("teal-bench", "teal-perm"),
     ("teal-bench", "teal-config"),
-    ("teal-workbench-automation", "teal-knowledge"),
     ("teal-bench", "teal-bench"),
+    ("teal-workbench-automation", "teal-knowledge"),
     ("teal-fmt", "teal-fmt"),
     ("teal-lsp", "teal-lsp"),
     ("teal-dap", "teal-dap"),
+];
+
+/// `teal-lang` 的独立命令；只有显式传入语言仓库时才进入工作台发行包。
+const LANGUAGE_PRODUCTS: &[(&str, &str)] = &[
+    ("teal-runtime", "teal-c"),
+    ("teal-runtime", "teal-test"),
+    ("teal-model", "teal-auth"),
+    ("teal-model", "teal-model"),
     ("teal-security", "teal-audit"),
 ];
 
 /// 执行当前主机的 release 构建并组装目录与平台归档。
 pub fn run(arguments: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
-    if !arguments.is_empty() {
-        return Err(format!("dist does not accept parameters: {}", arguments.join(" ")).into());
-    }
+    let language_root = parse_language_root(&arguments)?;
     let workspace = workspace_root();
     let host = host_triple()?;
     let bundle_name = format!("teal-{}-{host}", env!("CARGO_PKG_VERSION"));
@@ -47,17 +49,43 @@ pub fn run(arguments: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
     // 安全判断使用规范路径；传给 Cargo 和原生构建脚本的路径保留普通 Windows 形式。
     checked_target_path(&workspace, &build_root)?;
     checked_target_path(&workspace, &dist_root)?;
-    build_products(&workspace, &build_root)?;
+    build_products(&workspace, &build_root, language_root.as_deref())?;
+    let runtime_source = if let Some(language_root) = &language_root {
+        merge_runtime(&workspace.join("runtime"), &language_root, &build_root)?
+    } else {
+        workspace.join("runtime")
+    };
     let bundle = assemble_distribution(
-        &workspace.join("runtime"),
+        &runtime_source,
         &build_root.join("release"),
         &dist_root,
         &bundle_name,
     )?;
+    if language_root.is_some() {
+        for (_, binary) in LANGUAGE_PRODUCTS {
+            copy_binary(&build_root.join("release"), &bundle, binary, binary)?;
+        }
+    }
     let archive = create_platform_archive(&dist_root, &bundle, &bundle_name)?;
     println!("Teal distribution directory: {}", bundle.display());
     println!("Teal distribution archive: {}", archive.display());
     Ok(())
+}
+
+fn parse_language_root(
+    arguments: &[String],
+) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    match arguments {
+        [] => Ok(None),
+        [option, path] if option == "--language-root" => {
+            let path = PathBuf::from(path).canonicalize()?;
+            if !path.join("Cargo.toml").is_file() {
+                return Err(format!("language root has no Cargo.toml: {}", path.display()).into());
+            }
+            Ok(Some(path))
+        }
+        _ => Err("Usage: cargo xtask dist [--language-root PATH]".into()),
+    }
 }
 
 /// 返回工作区根目录，不依赖调用命令时的当前目录。
@@ -121,23 +149,142 @@ fn host_triple() -> Result<String, Box<dyn std::error::Error>> {
 }
 
 /// 使用锁文件构建显式产品清单中的 release 二进制。
-fn build_products(workspace: &Path, build_root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn build_products(
+    workspace: &Path,
+    build_root: &Path,
+    language_root: Option<&Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
-    for (package, binary) in PRODUCTS {
-        let mut command = Command::new(&cargo);
-        command
-            .current_dir(workspace)
-            .args(["build", "--release", "--locked", "--target-dir"])
-            .arg(build_root)
-            .args(["--package", package, "--bin", binary]);
-        if *package == "teal-workbench-services" {
-            command.args(["--features", "tools"]);
-        }
-        let status = command.status()?;
-        if !status.success() {
-            return Err(format!("release build failed for {package}/{binary}: {status}").into());
-        }
+    if let Some(language_root) = language_root {
+        verify_language_checkout(workspace, language_root)?;
     }
+    let build =
+        |root: &Path, products: &[(&str, &str)]| -> Result<(), Box<dyn std::error::Error>> {
+            for (package, binary) in products {
+                let mut command = Command::new(&cargo);
+                command
+                    .current_dir(root)
+                    .args(["build", "--release", "--locked", "--target-dir"])
+                    .arg(build_root)
+                    .args(["--package", package, "--bin", binary]);
+                if *package == "teal-workbench-services" {
+                    command.args(["--features", "tools"]);
+                }
+                let status = command.status()?;
+                if !status.success() {
+                    return Err(
+                        format!("release build failed for {package}/{binary}: {status}").into(),
+                    );
+                }
+            }
+            Ok(())
+        };
+    build(workspace, PRODUCTS)?;
+    if let Some(language_root) = language_root {
+        build(language_root, LANGUAGE_PRODUCTS)?;
+    }
+    Ok(())
+}
+
+fn verify_language_checkout(
+    workspace: &Path,
+    language_root: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let status = Command::new("git")
+        .args(["status", "--porcelain", "--untracked-files=all"])
+        .current_dir(language_root)
+        .output()?;
+    if !status.status.success() || !status.stdout.is_empty() {
+        return Err(format!(
+            "language checkout must be clean: {}",
+            language_root.display()
+        )
+        .into());
+    }
+    let head = String::from_utf8(
+        Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(language_root)
+            .output()?
+            .stdout,
+    )?
+    .trim()
+    .to_owned();
+    let output = Command::new("cargo")
+        .args(["metadata", "--locked", "--format-version", "1"])
+        .current_dir(workspace)
+        .output()?;
+    if !output.status.success() {
+        return Err("cargo metadata could not resolve the locked teal-lang revision".into());
+    }
+    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    let source = metadata["packages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|package| package["name"] == "teal-runtime")
+        .and_then(|package| package["source"].as_str())
+        .ok_or("cargo metadata did not report teal-runtime's Git source")?;
+    let locked_revision = source
+        .rsplit_once('#')
+        .map(|(_, revision)| revision)
+        .ok_or("Cargo source has no locked Git revision")?;
+    if head != locked_revision {
+        return Err(format!("language checkout is {head}, expected {locked_revision}").into());
+    }
+    Ok(())
+}
+
+fn merge_runtime(
+    workbench_runtime: &Path,
+    language_root: &Path,
+    build_root: &Path,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let merged = build_root.join("runtime-merged");
+    if merged.exists() {
+        fs::remove_dir_all(&merged)?;
+    }
+    copy_runtime(workbench_runtime, &merged)?;
+    let language_runtime = language_root.join("runtime/packages");
+    let std_source = language_runtime.join("std");
+    if !std_source.is_dir() {
+        return Err(format!(
+            "language runtime has no std package: {}",
+            std_source.display()
+        )
+        .into());
+    }
+    copy_runtime(&std_source, &merged.join("packages/std"))?;
+    fs::copy(
+        language_runtime.join("catalog-core.toml"),
+        merged.join("packages/catalog-core.toml"),
+    )?;
+    merge_catalogs(&merged.join("packages"))?;
+    Ok(merged)
+}
+
+fn merge_catalogs(packages: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let core: toml::Value =
+        toml::from_str(&fs::read_to_string(packages.join("catalog-core.toml"))?)?;
+    let workbench: toml::Value = toml::from_str(&fs::read_to_string(
+        packages.join("catalog-workbench.toml"),
+    )?)?;
+    let mut names = core["packages"].as_array().cloned().unwrap_or_default();
+    names.extend(
+        workbench["packages"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default(),
+    );
+    names.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
+    names.dedup();
+    let mut catalog = toml::map::Map::new();
+    catalog.insert("format".into(), toml::Value::Integer(4));
+    catalog.insert("packages".into(), toml::Value::Array(names));
+    fs::write(
+        packages.join("catalog.toml"),
+        toml::to_string(&toml::Value::Table(catalog))?,
+    )?;
     Ok(())
 }
 
@@ -188,7 +335,7 @@ fn classify_entry(
     }
 }
 
-/// 重建一个分发目录，复制十四项工具和完整资源树，并生成资源清单。
+/// 重建一个分发目录，复制工作台工具和完整资源树，并生成资源清单。
 ///
 /// 官方知识只以构建期内嵌制品的形式随二进制分发，不再物化到 `runtime/knowledge`。
 fn assemble_distribution(

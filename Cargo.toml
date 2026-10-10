@@ -92,22 +92,23 @@ zmij = "1"
 quote = "1"
 syn = { version = "2", features = ["full", "parsing"] }
 zip = { version = "=8.2.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
-# teal-lang dependencies use the fixed local Git repository during the extraction phase.
-teal-abi = { git = "file:///D:/teal-lang", version = "0.1.0" }
-teal-compiler = { git = "file:///D:/teal-lang", version = "0.1.0" }
-teal-vm = { git = "file:///D:/teal-lang", version = "0.1.0" }
-teal-core = { git = "file:///D:/teal-lang", version = "0.1.0" }
-teal-packages = { git = "file:///D:/teal-lang", version = "0.1.0" }
-teal-utils = { git = "file:///D:/teal-lang", version = "0.1.0" }
-teal-host = { git = "file:///D:/teal-lang", version = "0.1.0" }
-teal-security = { git = "file:///D:/teal-lang", version = "0.1.0", default-features = false }
-teal-agent = { git = "file:///D:/teal-lang", version = "0.1.0" }
-teal-model = { git = "file:///D:/teal-lang", version = "0.1.0" }
-teal-config = { git = "file:///D:/teal-lang", version = "0.1.0" }
-teal-knowledge = { git = "file:///D:/teal-lang", version = "0.1.0" }
-teal-runtime = { git = "file:///D:/teal-lang", version = "0.1.0" }
-teal-test-support = { git = "file:///D:/teal-lang", version = "0.1.0" }
-teal = { package = "teal-runtime", git = "file:///D:/teal-lang", version = "0.1.0" }
+# Keep the extraction boundary reproducible without requiring a sibling checkout.
+# The revision is the first standalone teal-lang workspace commit consumed here.
+teal-abi = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
+teal-compiler = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
+teal-vm = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
+teal-core = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
+teal-packages = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
+teal-utils = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
+teal-host = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
+teal-security = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0", default-features = false }
+teal-agent = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
+teal-model = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
+teal-config = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
+teal-knowledge = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
+teal-runtime = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
+teal-test-support = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
+teal = { package = "teal-runtime", git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
 
 # teal-workbench dependencies
 teal-bench = { path = "crates/teal-bench" }
