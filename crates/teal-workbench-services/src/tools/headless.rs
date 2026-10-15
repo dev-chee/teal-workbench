@@ -82,6 +82,9 @@ fn apply_mutation(
     }
     let buffers = BufferStore::default();
     match &request.kind {
+        MutationKind::WriteNew(text) => {
+            coordinator.create_new_text(&buffers, &request.path, text, true)
+        }
         MutationKind::CreateDirectory => coordinator.execute(
             &buffers,
             WorkspaceIntent::Create {
@@ -232,6 +235,31 @@ mod tests {
     }
 
     #[test]
+    fn headless_creation_uses_the_no_overwrite_transaction() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("nested/note.md");
+        let workspace = Workspace::open(root.path()).unwrap();
+        let coordinator = WorkspaceMutationCoordinator::new(
+            root.path().to_owned(),
+            root.path().join("checkpoints"),
+        )
+        .unwrap()
+        .with_audit_context(teal_security::AuditContext::new(Arc::new(AuditSink)));
+        let (response, _) = tokio::sync::oneshot::channel();
+        let request = MutationRequest {
+            observation: crate::tracing_context::Context::current(),
+            path: path.clone(),
+            kind: MutationKind::WriteNew("first".into()),
+            expected_buffer_version: None,
+            expected_content_sha256: None,
+            response,
+        };
+        apply_mutation(&workspace, &coordinator, &request).unwrap();
+        assert!(apply_mutation(&workspace, &coordinator, &request).is_err());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "first");
+    }
+
+    #[test]
     fn headless_mutation_rejects_a_stale_source_before_writing() {
         let _ = teal_security::install_process_sink(Arc::new(AuditSink));
         let root = tempfile::tempdir().unwrap();
@@ -297,10 +325,12 @@ mod tests {
             let compiled = teal::compile_source(
                 teal::Source::new("workspace-transaction.tl", source),
                 &teal::FsSourceLoader,
-                teal::CompileOptions::default().with_runtime_profile(teal::RuntimeProfile::agent()),
+                teal::CompileOptions::default().with_tier(teal::RuntimeTier::Agentic),
             )
             .unwrap();
-            let program = teal_agent::AgentProgram::from_compiled(&compiled).unwrap();
+            let program =
+                teal_agent::AgentProgram::from_shared_bytes(compiled.serialized_bytes().unwrap())
+                    .unwrap();
             let run = store.create_run(&program).unwrap();
             let runtime = teal_agent::AgentRuntime::new(
                 program,
@@ -319,10 +349,7 @@ mod tests {
             (runtime, run)
         };
         let mut host = teal::NativeHostRuntime::builder()
-            .trusted()
-            .trusted()
-            .trusted()
-            .trusted()
+            .audit_context(teal_security::process_context())
             .authorization(grant.clone())
             .console(false)
             .file_system(true)
@@ -331,12 +358,17 @@ mod tests {
         let (runtime, run) = make_runtime(
             r#"
             import "std/agent.tl" as app;
-            task main() {
-                let before = app::workspace_snapshot("note.txt").await;
+            task application() -> none | Error {
+                let before = app::workspace_snapshot("note.txt").await?;
                 app::receive().await;
-                app::workspace_replace(before, "after").await;
+                app::workspace_replace(before, "after").await?;
             }
-        "#,
+
+            task main() -> int {
+                let result = application().await;
+                match result { Error { .. } => { return 1; } _ => { return 0; } }
+            }
+"#,
         );
         let request = match runtime.run(&mut host).await {
             Err(teal_agent::AgentRuntimeError::NeedsInteraction(request)) => request,
@@ -356,19 +388,30 @@ mod tests {
                 },
             )
             .unwrap();
-        assert!(runtime.resume(&mut host).await.is_err());
+        let outcome = runtime.resume(&mut host).await;
+        assert_eq!(outcome.as_ref().unwrap().exit_code, 1);
+        runtime.finish_persistent_execution(&outcome).unwrap();
+        assert_eq!(
+            store.run(&run.id).unwrap().unwrap().state,
+            teal_agent::RunState::CompletedWithErrors
+        );
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "external");
         drop(runtime);
 
         let (runtime, _) = make_runtime(
             r#"
             import "std/agent.tl" as app;
-            task main() {
-                let before = app::workspace_snapshot("note.txt").await;
-                let receipt = app::workspace_replace(before, "after").await;
+            task application() -> none | Error {
+                let before = app::workspace_snapshot("note.txt").await?;
+                let receipt = app::workspace_replace(before, "after").await?;
                 app::emit("text", receipt.after_sha256);
             }
-        "#,
+
+            task main() -> int {
+                let result = application().await;
+                match result { Error { .. } => { return 1; } _ => { return 0; } }
+            }
+"#,
         );
         runtime.run(&mut host).await.unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "after");

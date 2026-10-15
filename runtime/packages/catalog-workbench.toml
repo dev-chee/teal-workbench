@@ -1,2 +1,2 @@
-format = 4
+format = 6
 packages = ["agents", "bench", "feishu", "git", "http", "oauth"]

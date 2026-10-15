@@ -4,13 +4,13 @@ $tealPath = 'F:\teal\target\release\teal.exe'
 $permissionFile = 'F:\teal\examples\showcases\codex-report\permissions.toml'
 $pullArgs = @(
     'run'
-    '--runtime-profile', 'native'
+    '--tier', 'hosted'
     '--permission-file', $permissionFile
     'F:\teal\examples\showcases\codex-report\codex-report-pull.tl'
 )
 $agentArgs = @(
     'run'
-    '--runtime-profile', 'agent'
+    '--tier', 'agentic'
     '--permission-file', $permissionFile
     'F:\teal\examples\showcases\codex-report\codex-report.tl'
 )

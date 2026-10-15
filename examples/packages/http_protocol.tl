@@ -5,24 +5,18 @@
 import "http/client.tl" as http;
 import "http/json.tl" as encode;
 
-task main() {
-    let url = http::query("https://example.com/search", [
-        http::Header { name: "q", value: "teal lang" },
-        http::Header { name: "page", value: "2" },
-    ]);
+task application() -> none | Error {
+    let url = http::query("https://example.com/search", [http::Header { name: "q", value: "teal lang" }, http::Header { name: "page", value: "2" },]) ?;
     print(url);
 
     let request = http::request("POST", url);
     request.headers = [http::Header { name: "Content-Type", value: "application/json" }];
-    request.body = http::Body.text { value: encode::object([encode::text("name", "teal")]) };
+    request.body = http::Body.text { value: encode::object([encode::text("name", "teal") ?]) ? };
     print(request.method, request.headers.len(), request.timeout_ms, request.max_bytes);
 
-    let payload = encode::object([
-        encode::text("name", "teal"),
-        encode::value("parts", encode::array([encode::quote("one"), encode::quote("two")])),
-    ]);
+    let payload = encode::object([encode::text("name", "teal") ?, encode::value("parts", encode::array([encode::quote("one") ?, encode::quote("two") ?]) ?) ?,]) ?;
     print(payload);
-    print(encode::get(payload, "/parts/1"), http::encode_component("a b/c"));
+    print(encode::get(payload, "/parts/1") ?, http::encode_component("a b/c") ?);
 
     let upload = http::request("POST", url);
     upload.body = http::Body.multipart { parts: [http::field("note", "hello")] };
@@ -35,6 +29,19 @@ task main() {
         }
         http::Body.multipart { parts } => {
             print("multipart", parts.len());
+        }
+    }
+}
+
+/// 入口明确处理失败；未知外部效果仍由 VM 终止。
+task main() -> int {
+    let result = application().await;
+    match result {
+        Error { .. } => {
+            print(result.message);
+            return 1;
+        } _ => {
+            return 0;
         }
     }
 }

@@ -94,8 +94,8 @@ flowchart LR
 
 ## 两个独立 Cargo 工作区
 
-`teal-lang` 包含语言、Embedded Runtime、通用 Agent Runtime、模型协议和核心标准包；
-`teal-workbench` 包含语言工具、编辑器、工作区服务、交互前端和应用扩展包。各仓库的
+`teal-lang` 包含语言、Embedded Runtime、通用 Agent Runtime、模型协议、LSP/DAP、格式化、本机服务和核心标准包；
+`teal-workbench` 包含编辑器、LSP 客户端、工作区服务、批准交互、窗口与会话呈现和应用扩展包。各仓库的
 `Cargo.toml` 与 `cargo metadata --locked` 是成员和依赖的事实来源，维护工具不再读取
 拆仓前的 sibling `workspace.toml`。依赖方向固定为 `teal-workbench → teal-lang`，工作台
 使用 HTTPS Git 源和固定提交，通过全部兼容性验证后再切换到固定发布 tag。消费版本与
@@ -122,7 +122,7 @@ Builtin；运行时锁与 import closure 必须携带这两个 catalog 身份。
 ## 非目标与决策原则
 
 - Teal 架构不把工作台 UI、模型供应商或某个本机平台作为语言和嵌入式执行的前提。
-- `RuntimeProfile`、包导入、工具可见性或模型自述都不单独构成授权。
+- `RuntimeTier`、包导入、工具可见性或模型自述都不单独构成授权。
 - 模型输出的结构合法性不等于业务正确性，也不自动构成批准或外部效果证据。
 - 工作台会话、编辑器展示状态和宿主缓存不能充当 VM 或 Agent 的恢复凭据。
 - 为了便利性把平台服务、交互逻辑或安全规则复制到多个前端，会破坏职责边界；新增能力应优先放入其所属层并由适配器复用。

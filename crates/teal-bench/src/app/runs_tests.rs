@@ -1,6 +1,6 @@
 use teal_agent::{ActionContext, UserQuestion};
-use teal_workbench_services::{PanelSession as _, PanelSessionState};
 use teal_workbench_services::tools::{ApprovalPrompt, ChannelApproval};
+use teal_workbench_services::{PanelSession as _, PanelSessionState};
 use tokio::sync::mpsc;
 
 use super::*;
@@ -23,8 +23,7 @@ fn program() -> teal_agent::AgentProgram {
     let image = teal_compiler::compile(
         teal_compiler::Source::new("runs-test.tl", "fn main() {}"),
         &NoImports,
-        teal_compiler::CompileOptions::default()
-            .with_runtime_profile(teal_compiler::RuntimeProfile::agent()),
+        teal_compiler::CompileOptions::default().with_tier(teal_compiler::RuntimeTier::Agentic),
     )
     .unwrap()
     .program;

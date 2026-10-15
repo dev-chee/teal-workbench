@@ -24,13 +24,13 @@ pub(crate) const PRODUCTS: &[(&str, &str)] = &[
     ("teal-bench", "teal-config"),
     ("teal-bench", "teal-bench"),
     ("teal-workbench-automation", "teal-knowledge"),
-    ("teal-fmt", "teal-fmt"),
-    ("teal-lsp", "teal-lsp"),
-    ("teal-dap", "teal-dap"),
 ];
 
 /// `teal-lang` 的独立命令；只有显式传入语言仓库时才进入工作台发行包。
 const LANGUAGE_PRODUCTS: &[(&str, &str)] = &[
+    ("teal-lang", "teal-fmt"),
+    ("teal-lang", "teal-lsp"),
+    ("teal-lang", "teal-dap"),
     ("teal-runtime", "teal-c"),
     ("teal-runtime", "teal-test"),
     ("teal-model", "teal-auth"),
@@ -51,7 +51,7 @@ pub fn run(arguments: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
     checked_target_path(&workspace, &dist_root)?;
     build_products(&workspace, &build_root, language_root.as_deref())?;
     let runtime_source = if let Some(language_root) = &language_root {
-        merge_runtime(&workspace.join("runtime"), &language_root, &build_root)?
+        merge_runtime(&workspace.join("runtime"), language_root, &build_root)?
     } else {
         workspace.join("runtime")
     };
@@ -256,7 +256,7 @@ fn merge_runtime(
     }
     copy_runtime(&std_source, &merged.join("packages/std"))?;
     fs::copy(
-        language_runtime.join("catalog-core.toml"),
+        language_runtime.join("catalog.toml"),
         merged.join("packages/catalog-core.toml"),
     )?;
     merge_catalogs(&merged.join("packages"))?;
@@ -279,7 +279,7 @@ fn merge_catalogs(packages: &Path) -> Result<(), Box<dyn std::error::Error>> {
     names.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
     names.dedup();
     let mut catalog = toml::map::Map::new();
-    catalog.insert("format".into(), toml::Value::Integer(4));
+    catalog.insert("format".into(), toml::Value::Integer(6));
     catalog.insert("packages".into(), toml::Value::Array(names));
     fs::write(
         packages.join("catalog.toml"),

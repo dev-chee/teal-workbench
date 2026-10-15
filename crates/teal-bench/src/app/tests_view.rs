@@ -23,10 +23,17 @@ pub(crate) struct TestsOutcome {
 }
 
 /// 在阻塞线程上编译并运行一个脚本登记的 `@test`：返回显示结果与摘要。
-pub(crate) fn run_tests_blocking(path: &Path, filter: &[String]) -> TestsOutcome {
-    let profile_name = runtime_profile_name();
-    let profile =
-        teal::RuntimeProfile::builtin(&profile_name).unwrap_or_else(teal::RuntimeProfile::agent);
+pub(crate) fn run_tests_blocking(workspace: &Path, path: &Path, filter: &[String]) -> TestsOutcome {
+    let profile = match configured_tier(workspace) {
+        Ok(tier) => tier,
+        Err(error) => {
+            return TestsOutcome {
+                rows: Vec::new(),
+                summary: "Tests could not be run".into(),
+                error: Some(error),
+            };
+        }
+    };
     let source_text = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(error) => {
@@ -41,7 +48,7 @@ pub(crate) fn run_tests_blocking(path: &Path, filter: &[String]) -> TestsOutcome
     let program = match teal::compile_source(
         source,
         &teal::FsSourceLoader,
-        teal::CompileOptions::default().with_runtime_profile(profile.clone()),
+        teal::CompileOptions::default().with_tier(profile),
     ) {
         Ok(program) => program,
         Err(error) => {
@@ -72,7 +79,7 @@ pub(crate) fn run_tests_blocking(path: &Path, filter: &[String]) -> TestsOutcome
     let report = match teal::run_program_tests(
         &program,
         &mut host,
-        teal::VmOptions::for_profile(profile),
+        teal::VmOptions::for_tier(profile),
         teal::VmTestLimits::default(),
         filter,
     ) {
@@ -144,13 +151,14 @@ fn failure_text(kind: &str, message: &str) -> String {
 }
 
 /// 返回工作台脚本使用的运行时配置档名称。
-fn runtime_profile_name() -> String {
-    teal_config::ConfigPaths::discover(None)
-        .ok()
-        .and_then(|paths| teal_config::load_declarations_paths(paths).ok())
-        .and_then(|declarations| declarations.category::<teal::RuntimeDocument>().ok())
-        .map(|document| document.into_document().profile)
-        .unwrap_or_else(|| "agent".to_owned())
+fn configured_tier(workspace: &Path) -> Result<teal::RuntimeTier, String> {
+    let effective =
+        teal_security::load_declarations(Some(workspace)).map_err(|error| error.to_string())?;
+    Ok(effective
+        .category::<teal::RuntimeDocument>()
+        .map_err(|error| error.to_string())?
+        .document()
+        .tier)
 }
 
 impl App {
@@ -317,9 +325,10 @@ impl App {
         let output = self.runtime_tx.clone();
         let requested = filter.clone();
         let worker_path = path.clone();
+        let workspace = self.workspace.clone();
         self.tasks.spawn(async move {
             let outcome = crate::runtime_bridge::spawn_blocking(move || {
-                run_tests_blocking(&worker_path, &requested)
+                run_tests_blocking(&workspace, &worker_path, &requested)
             })
             .await
             .unwrap_or_else(|error| TestsOutcome {

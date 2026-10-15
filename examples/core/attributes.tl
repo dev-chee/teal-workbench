@@ -5,8 +5,7 @@ class Metadata {
     source: string,
 }
 
-@attribute
-class Route {
+@attribute class Route {
     method: string,
     path: string,
     metadata: Metadata,
@@ -18,8 +17,7 @@ impl Route {
     }
 }
 
-@attribute
-enum Mode {
+@attribute enum Mode {
     fast,
     safe { level: int },
 }
@@ -35,13 +33,17 @@ fn metadata(source: string) -> Metadata {
 }
 @Mode.safe { level: 2 }
 task main() {
-    let route = reflect::item(main).@Route;
-    let mode = reflect::item(main).@Mode;
+    let route = reflect(main).@Route;
+    let mode = reflect(main).@Mode;
     print(route.describe());
     route.path = "/health";
-    print(reflect::item(main).@Route.path);
+    print(reflect(main).@Route.path);
     match mode {
-        Mode.fast => { print("fast"); }
-        Mode.safe { level } => { print(level); }
+        Mode.fast => {
+            print("fast");
+        }
+        Mode.safe { level } => {
+            print(level);
+        }
     }
 }

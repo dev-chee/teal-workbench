@@ -544,15 +544,15 @@ impl App {
             "" | "user" => (
                 paths
                     .path(
-                        teal_config::ConfigLayer::User,
+                        teal_config::ConfigScope::User,
                         teal_config::ConfigFile::Bench,
                     )
                     .unwrap_or_else(|| paths.teal_home.join("bench.toml")),
-                teal_config::ConfigLayer::User,
+                teal_config::ConfigScope::User,
             ),
             "workspace" => (
                 self.workspace.join(".teal/bench.toml"),
-                teal_config::ConfigLayer::Workspace,
+                teal_config::ConfigScope::Workspace,
             ),
             _ => {
                 self.message(
@@ -635,7 +635,7 @@ impl App {
         self.submit_source_agent_input(format!(":model {model_profile}/{model}"));
         let path = paths
             .path(
-                teal_config::ConfigLayer::User,
+                teal_config::ConfigScope::User,
                 teal_config::ConfigFile::Model,
             )
             .unwrap_or_else(|| paths.teal_home.join("model.toml"));

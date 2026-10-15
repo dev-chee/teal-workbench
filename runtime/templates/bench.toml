@@ -6,7 +6,7 @@
 # Agent 行为位于 Teal 源码；模型选择属于 `model.toml`。内建 `default` 无需在此登记。
 
 # 当前写入格式版本；旧版本配置会被拒绝，不做迁移。
-version = 14
+version = 15
 
 # 会话恢复策略：`prompt`、`always` 或 `never`。
 # session_restore = "prompt"

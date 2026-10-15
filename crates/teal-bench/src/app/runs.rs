@@ -98,8 +98,7 @@ impl teal::RunManagementDriver for BenchRunDriver {
                     .map_err(|error| teal_agent::RunManagementError::Provider(error.to_string()))?;
             }
             let mut host = teal::NativeHostRuntime::builder()
-                .trusted()
-                .trusted()
+                .audit_context(teal_security::process_context())
                 .authorization(grant.clone())
                 .echo(false)
                 .dylib_policy(teal::DylibPolicy::Deny)

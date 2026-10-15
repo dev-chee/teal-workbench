@@ -10,14 +10,16 @@ use std::{
 use tokio::sync::Notify;
 
 use teal::{
-    CompileOptions, ExecutionBindings, FsSourceLoader, RuntimeProfile, Source, prepare_execution,
+    CompileOptions, ExecutionBindings, FsSourceLoader, RuntimeTier, Source, prepare_execution,
 };
-use teal_agent::{AgentError, ExternalOperationKind, ExternalOperationState, RunState, RuntimeStore};
+use teal_agent::{
+    AgentError, ExternalOperationKind, ExternalOperationState, RunState, RuntimeStore,
+};
 use teal_model::{
     AuthAccount, AuthContext, AuthError, AuthFuture, AuthMethodDescriptor, AuthMethodId,
     AuthMethodKind, AuthProfileName, AuthProvider, AuthProviderDescriptor, AuthProviderId,
-    AuthProviderRegistry, AuthStatus, Cancellation, LoginEvent, LoginInput,
-    AuthenticatedModelFactory, ModelEvent, ModelProvider, ModelRequest, ProviderFuture, StopReason,
+    AuthProviderRegistry, AuthStatus, AuthenticatedModelFactory, Cancellation, LoginEvent,
+    LoginInput, ModelEvent, ModelProvider, ModelRequest, ProviderFuture, StopReason,
 };
 use teal_workbench_automation::WorkbenchAutomationRuntime;
 use teal_workbench_automation::extension::{ExtensionTaskControl, ExtensionTaskRef};
@@ -159,7 +161,7 @@ fn seed_sdlc_auth(root: &Path) -> teal_model::SharedModelConfiguration {
         teal_model::TomlModelConfiguration::from_root(root).expect("test model configuration"),
     ));
     let snapshot = configuration.load().expect("empty model configuration");
-    let revision = snapshot.layer_revision(teal_model::ModelConfigScope::User);
+    let revision = snapshot.scope_revision(teal_model::ModelConfigScope::User);
     let provider = teal_model::ProviderId::new("sdlc-test").expect("provider ID");
     let model = teal_model::ModelId::new("sdlc-test-model").expect("model ID");
     let mut document = snapshot.user;
@@ -217,7 +219,9 @@ work = "work.tl"
         &extension,
         "command.tl",
         r#"import "bench/extension.tl" as extension;
-fn main() { extension::start("work", "review"); }
+fn application() -> none | Error { extension::start("work", "review")?; }
+
+fn main() -> int { let result = application(); match result { Error { .. } => { print(result.message); return 1; } _ => { return 0; } } }
 "#,
     );
     write(
@@ -300,15 +304,17 @@ work = "work.tl"
         "mode.tl",
         r#"
 import "bench/extension.tl" as extension;
-fn main() {
-    let action = extension::event("action");
+fn application() -> none | Error {
+    let action = extension::event("action")?;
     if action == "task_completed" {
-        extension::set("phase", "published");
+        extension::set("phase", "published")?;
     } else {
-        extension::set("outcome", action);
+        extension::set("outcome", action)?;
     }
 }
 
+
+fn main() -> int { let result = application(); match result { Error { .. } => { print(result.message); return 1; } _ => { return 0; } } }
 "#,
     );
     write(root, "work.tl", "fn main() {}\n");
@@ -352,7 +358,7 @@ fn persistent_program() -> teal::CompiledProgram {
             "fn main() { entry_task(); } task entry_task() { print(\"done\"); }",
         ),
         &FsSourceLoader,
-        CompileOptions::default().with_runtime_profile(RuntimeProfile::agent()),
+        CompileOptions::default().with_tier(RuntimeTier::Agentic),
     )
     .expect("persistent task program")
 }
@@ -692,9 +698,17 @@ fn git(root: &Path, arguments: &[&str]) -> String {
 }
 
 fn test_command(script: &str) -> String {
+    let (program, arguments) = if cfg!(windows) {
+        (
+            "powershell",
+            vec!["-NoProfile", "-NonInteractive", "-File", script],
+        )
+    } else {
+        ("sh", vec![script])
+    };
     serde_json::json!({
-        "program":"powershell",
-        "args":["-NoProfile","-NonInteractive","-File",script],
+        "program":program,
+        "args":arguments,
         "cwd":".",
         "timeout_ms":30_000,
         "inputs":["src/feature.tl"]
@@ -782,7 +796,9 @@ async fn approved_extension_loads_and_runs_its_declared_command() {
         &extension,
         r#"
 import "bench/extension.tl" as extension;
-fn main() { extension::set("phase", "planning"); }
+fn application() -> none | Error { extension::set("phase", "planning")?; }
+
+fn main() -> int { let result = application(); match result { Error { .. } => { print(result.message); return 1; } _ => { return 0; } } }
 "#,
     );
     let mut app = app_for(directory.path(), &directory.path().join("state")).await;
@@ -835,11 +851,13 @@ work = "work.tl"
         &extension,
         "command.tl",
         r#"import "bench/extension.tl" as extension;
-fn main() {
-    let action = extension::event("action");
-    if action == "" { extension::start("work", "review"); }
-    else { extension::set("outcome", action); }
+fn application() -> none | Error {
+    let action = extension::event("action")?;
+    if action == "" { extension::start("work", "review")?; }
+    else { extension::set("outcome", action)?; }
 }
+
+fn main() -> int { let result = application(); match result { Error { .. } => { print(result.message); return 1; } _ => { return 0; } } }
 "#,
     );
     write(
@@ -860,7 +878,7 @@ task entry_task() { let writer = Writer {}; print(writer.write("review").await);
         .canonicalize()
         .expect("canonical user configuration owner");
     let hook = state.join("deny-before-model.tl");
-    std::fs::write(&hook, "fn main() { throw \"deny model\"; }\n").expect("hook script");
+    std::fs::write(&hook, "fn main() { exit(1); }\n").expect("hook script");
     let hook = hook.canonicalize().expect("canonical hook script");
     app.scripting
         .hooks
@@ -909,7 +927,9 @@ work = "work.tl"
         &extension,
         "command.tl",
         r#"import "bench/extension.tl" as extension;
-fn main() { extension::start("work", "review"); }
+fn application() -> none | Error { extension::start("work", "review")?; }
+
+fn main() -> int { let result = application(); match result { Error { .. } => { print(result.message); return 1; } _ => { return 0; } } }
 "#,
     );
     write(
@@ -1074,7 +1094,9 @@ async fn approval_rejects_artifact_changes_after_the_prompt_is_created() {
         &extension,
         r#"
 import "bench/extension.tl" as extension;
-fn main() { extension::request_approval("Review plan", "[\"plan.md\"]", "publish", ""); }
+fn application() -> none | Error { extension::request_approval("Review plan", "[\"plan.md\"]", "publish", "")?; }
+
+fn main() -> int { let result = application(); match result { Error { .. } => { print(result.message); return 1; } _ => { return 0; } } }
 "#,
     );
     let mut app = app_for(directory.path(), &directory.path().join("state")).await;
@@ -1108,7 +1130,9 @@ async fn failed_run_with_candidate_delivers_task_failed_without_advancing_the_st
         &extension,
         r#"
 import "bench/extension.tl" as extension;
-fn main() { extension::set("phase", "planning"); }
+fn application() -> none | Error { extension::set("phase", "planning")?; }
+
+fn main() -> int { let result = application(); match result { Error { .. } => { print(result.message); return 1; } _ => { return 0; } } }
 "#,
     );
     let mut app = app_for(directory.path(), &directory.path().join("state")).await;
@@ -1117,7 +1141,7 @@ fn main() { extension::set("phase", "planning"); }
     let store = Arc::new(RuntimeStore::open(directory.path()).expect("runtime store"));
     let prepared = prepare_execution(
         &persistent_program(),
-        store.as_ref(),
+        Arc::clone(&store),
         "demo:event-1:0",
         &"a".repeat(64),
         ExecutionBindings::default(),
@@ -1174,7 +1198,9 @@ async fn extension_cancel_preserves_unknown_work_until_it_is_resolved() {
         &extension,
         r#"
 import "bench/extension.tl" as extension;
-fn main() { extension::set("phase", "planning"); }
+fn application() -> none | Error { extension::set("phase", "planning")?; }
+
+fn main() -> int { let result = application(); match result { Error { .. } => { print(result.message); return 1; } _ => { return 0; } } }
 "#,
     );
     let mut app = app_for(directory.path(), &directory.path().join("state")).await;
@@ -1183,7 +1209,7 @@ fn main() { extension::set("phase", "planning"); }
     let store = Arc::new(RuntimeStore::open(directory.path()).expect("runtime store"));
     let prepared = prepare_execution(
         &persistent_program(),
-        store.as_ref(),
+        Arc::clone(&store),
         "demo:event-unknown:0",
         &"b".repeat(64),
         ExecutionBindings::default(),
@@ -1203,6 +1229,8 @@ fn main() { extension::set("phase", "planning"); }
 
     let reopened = Arc::new(RuntimeStore::open(directory.path()).expect("reopened store"));
     reopened
+        .claim_run_for_reconciliation(&prepared.run_id)
+        .expect("reconciliation claim")
         .set_run_state(&prepared.run_id, RunState::NeedsAttention)
         .expect("unresolved effect requires attention");
     assert_eq!(
@@ -1309,31 +1337,38 @@ async fn shipped_sdlc_extension_executes_plan_approved_delivery_and_deployment()
     let mut app = app_for(workspace, &state).await;
     load_approved(&mut app, &root, "sdlc").await;
     std::fs::write(workspace.join("README.md"), "SDLC test workspace\n").expect("baseline file");
-    std::fs::write(
-        workspace.join("verify-feature.ps1"),
+    let verification_script = if cfg!(windows) {
+        "verify-feature.ps1"
+    } else {
+        "verify-feature.sh"
+    };
+    let verification_source = if cfg!(windows) {
         r#"
 $ErrorActionPreference = "Stop"
 $source = Get-Content -Raw (Join-Path $PSScriptRoot "src/feature.tl")
 if ($source -notmatch 'fn feature\(\)') { throw "feature declaration is missing" }
 if ($source -notmatch 'planned implementation') { throw "planned behavior is missing" }
-"#,
-    )
-    .expect("verification script");
+"#
+    } else {
+        r#"set -eu
+grep -F 'fn feature()' src/feature.tl >/dev/null
+grep -F 'planned implementation' src/feature.tl >/dev/null
+"#
+    };
+    std::fs::write(workspace.join(verification_script), verification_source)
+        .expect("verification script");
     git(workspace, &["init", "--quiet"]);
     git(workspace, &["config", "user.name", "SDLC Test"]);
     git(
         workspace,
         &["config", "user.email", "sdlc-test@example.invalid"],
     );
-    git(workspace, &["add", "README.md", "verify-feature.ps1"]);
+    git(workspace, &["add", "README.md", verification_script]);
     git(workspace, &["commit", "--quiet", "-m", "test: baseline"]);
     let requests = install_sdlc_model(&mut app, &state).await;
     let mut config = BTreeMap::from([("agent".into(), "sdlc-test".into())]);
     for name in ["build", "test", "lint", "eval", "deploy"] {
-        config.insert(
-            format!("command.{name}"),
-            test_command("verify-feature.ps1"),
-        );
+        config.insert(format!("command.{name}"), test_command(verification_script));
     }
     app.extensions
         .loaded

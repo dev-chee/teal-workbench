@@ -15,8 +15,8 @@ _teal() {
         'lsp:Start the language server'
         'dap:Start the debug adapter'
     )
-    compile_arguments=(options profiles lints --code --format --runtime-profile --optimization --debug --no-debug --debug-info --no-debug-info --allow --warn --deny --forbid --otel-traces --otel-metrics --otel-endpoint --trace-functions)
-    run_arguments=(--code --bindings --runtime-profile --optimization --debug --no-debug --debug-info --no-debug-info --allow --warn --deny --forbid --permission-preset --interaction --permission-file --otel-traces --otel-metrics --otel-endpoint --trace-functions --otel-profiles --otel-profiles-endpoint --profile --profile-interval-ms)
+    compile_arguments=(options profiles lints --code --format --tier --optimization --debug --no-debug --debug-info --no-debug-info --allow --warn --deny --forbid --otel-traces --otel-metrics --otel-endpoint --trace-functions)
+    run_arguments=(--code --bindings --tier --optimization --debug --no-debug --debug-info --no-debug-info --allow --warn --deny --forbid --permission-preset --interaction --permission-file --otel-traces --otel-metrics --otel-endpoint --trace-functions --otel-profiles --otel-profiles-endpoint --profile --profile-interval-ms)
     permission_arguments=(show preset grant explain operations revoke)
     auth_arguments=(login status logout use codex deepseek --profile --method --scope --stdin-key --env-key --yes --verify --format)
     bench_arguments=(--safe-mode --no-config --session --no-mouse)

@@ -12,10 +12,10 @@ use ratatui::{
 };
 use teal_workbench_core::{AppCommand, InputEvent, MouseEvent};
 
-use super::panel::{ClipboardAction, PanelKind, PanelStatus, WidgetAction};
-use super::menu::{Menu, MenuOutcome};
-use super::widget::{Widget, WidgetChrome};
 use super::MenuItem;
+use super::menu::{Menu, MenuOutcome};
+use super::panel::{ClipboardAction, PanelKind, PanelStatus, WidgetAction};
+use super::widget::{Widget, WidgetChrome};
 
 /// 可选条目在列表中的最大可见行数。
 const MAX_VISIBLE: usize = 12;
@@ -220,10 +220,14 @@ mod tests {
     #[test]
     fn filters_then_accepts_the_selected_item_as_a_command() {
         let mut picker = PickerWidget::with_labels(
-            "runtime profile",
-            vec!["core".to_owned(), "agent".to_owned(), "full".to_owned()],
+            "runtime tier",
+            vec![
+                "embedded".to_owned(),
+                "agentic".to_owned(),
+                "hosted".to_owned(),
+            ],
         )
-        .with_command("runtime-profile");
+        .with_command("runtime-tier");
         assert_eq!(picker.kind(), PanelKind::Messages);
         assert_eq!(picker.items().len(), 3);
 
@@ -237,7 +241,7 @@ mod tests {
         assert!(matches!(
             action,
             WidgetAction::Commands(commands)
-                if commands == vec![AppCommand::Command("runtime-profile agent".to_owned())]
+                if commands == vec![AppCommand::Command("runtime-tier agentic".to_owned())]
         ));
 
         // 取消产生取消命令，而不是静默消费。

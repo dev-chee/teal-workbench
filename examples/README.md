@@ -83,7 +83,7 @@ Remove-Item -LiteralPath $tealExampleParent
 
 `safe_host_declarations.tl` 由同目录的 Rust `host_registry.rs` 提供实现。该文件是嵌入宿主示例源码；当前工作台根包没有登记 `host_registry` Cargo example，需在消费 `teal-lang` 的宿主 package 中登记并运行。
 
-它先证明缺少授权会在加载阶段失败且没有副作用，再以完全匹配的签名和 Capability 执行。
+它先证明缺少授权会在加载阶段失败且没有副作用，再以完全匹配的签名和 Permission 执行。
 `dylib_declarations.tl` 只做编译检查；真实动态库执行仍依赖平台 C ABI、库文件、符号和
 显式授权，不能由声明编译成功推断为已运行。
 
@@ -120,11 +120,11 @@ cargo run -p teal -- run examples/core/task_status.tl
 
 ```powershell
 cargo run -p teal -- auth login codex --method codex-cli
-cargo run -p teal -- compile examples/agent/model_options.tl --runtime-profile agent
+cargo run -p teal -- compile examples/agent/model_options.tl --tier agentic
 cargo run -p teal -- run examples/agent/model_options.tl
 ```
 
-模型返回必须通过 `__teal_complete` 满足结果契约。认证、用户回答、工具批准和 Capability 授权
+模型返回必须通过 `__teal_complete` 满足结果契约。认证、用户回答、工具批准和 Permission 授权
 是互相独立的协议；持久恢复不会自动重放 Unknown 外部效果。
 
 DeepSeek 示例先执行 `teal auth login deepseek`，再执行
@@ -155,7 +155,7 @@ DeepSeek 示例先执行 `teal auth login deepseek`，再执行
 DHE 入口先做无副作用编译检查：
 
 ```powershell
-cargo run -p teal -- compile examples/showcases/dhe/dhe.tl --runtime-profile agent
+cargo run -p teal -- compile examples/showcases/dhe/dhe.tl --tier agentic
 ```
 
 真实 `release`、`inspect`、`demo`、`player` 或 `all` 运行需要按脚本帮助显式授予实际目录、
@@ -174,5 +174,5 @@ cargo run -p teal -- compile examples/showcases/dhe/dhe.tl --runtime-profile age
 cargo test -p teal-workbench-automation shipped_bench_examples_prepare_and_execute
 ```
 
-语言示例 manifest 与 coverage 的完整执行属于语言发行验收；当前工作台只登记工作台扩展场景测试。Host 缺少 Capability 或资源时必须在副作用前拒绝。编译通过不等于真实模型、平台动态库、终端交互、
+语言示例 manifest 与 coverage 的完整执行属于语言发行验收；当前工作台只登记工作台扩展场景测试。Host 缺少 Permission 或资源时必须在副作用前拒绝。编译通过不等于真实模型、平台动态库、终端交互、
 浏览器服务、远程运行或外部业务效果已经通过。

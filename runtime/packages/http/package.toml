@@ -1,9 +1,9 @@
-format = 5
+format = 7
 name = "http"
 version = "2.0.0"
 language_edition = "2026"
 dependencies = ["std"]
 
 [modules]
-"client.tl" = "native"
-"json.tl" = "native"
+"client.tl" = "hosted"
+"json.tl" = "hosted"

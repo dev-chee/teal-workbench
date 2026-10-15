@@ -18,7 +18,7 @@ struct Fixture {
 }
 
 impl Fixture {
-    /// 创建包含运行时资源和九项伪 release 二进制的样本。
+    /// 创建包含运行时资源和工作台伪 release 二进制的样本。
     fn new(name: &str) -> Self {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -44,9 +44,6 @@ impl Fixture {
             "teal-config",
             "teal-bench",
             "teal-knowledge",
-            "teal-fmt",
-            "teal-lsp",
-            "teal-dap",
         ] {
             let path = Path::new("binaries").join(executable_name(binary));
             fixture.write(path, binary.as_bytes());
@@ -91,9 +88,6 @@ fn assembly_replaces_stale_output_and_writes_sorted_hashes() {
         "teal-config",
         "teal-bench",
         "teal-knowledge",
-        "teal-fmt",
-        "teal-lsp",
-        "teal-dap",
     ] {
         assert_eq!(
             fs::read(bundle.join(executable_name(binary))).unwrap(),
@@ -175,9 +169,6 @@ fn both_archives_contain_one_complete_top_level_bundle() {
             "teal-config",
             "teal-bench",
             "teal-knowledge",
-            "teal-fmt",
-            "teal-lsp",
-            "teal-dap",
         ]
         .map(|binary| format!("teal-test/{binary}{suffix}")),
     );
@@ -294,4 +285,64 @@ fn tar_archive_names(path: &Path) -> Vec<String> {
         .collect::<Vec<_>>();
     names.sort();
     names
+}
+
+#[test]
+fn language_binaries_have_one_source_and_never_replace_the_product_entry() {
+    let installer = include_str!("../../../../runtime/installs/install.ps1");
+    for (_, binary) in super::PRODUCTS.iter().chain(super::LANGUAGE_PRODUCTS) {
+        assert!(
+            installer.contains(&format!("'{binary}.exe'")),
+            "installer missing {binary}"
+        );
+    }
+    assert!(installer.contains("'--language-root', $languageRoot"));
+    for name in ["teal-fmt", "teal-lsp", "teal-dap"] {
+        assert!(super::LANGUAGE_PRODUCTS.contains(&("teal-lang", name)));
+        assert!(!super::PRODUCTS.iter().any(|(_, binary)| *binary == name));
+    }
+    assert!(super::PRODUCTS.contains(&("teal", "teal")));
+    assert!(
+        !super::LANGUAGE_PRODUCTS
+            .iter()
+            .any(|(_, binary)| *binary == "teal")
+    );
+}
+
+#[test]
+fn runtime_merge_takes_std_from_language_and_keeps_workbench_extensions() {
+    let fixture = Fixture::new("runtime-merge");
+    fixture.write(
+        "language/runtime/packages/catalog.toml",
+        b"format = 6\npackages = [\"std\"]\n",
+    );
+    fixture.write(
+        "language/runtime/packages/std/package.toml",
+        b"format = 7\n",
+    );
+    fixture.write(
+        "runtime/packages/catalog-workbench.toml",
+        b"format = 6\npackages = [\"bench\"]\n",
+    );
+    fixture.write("runtime/packages/bench/package.toml", b"format = 7\n");
+    let merged = super::merge_runtime(
+        &fixture.root.join("runtime"),
+        &fixture.root.join("language"),
+        &fixture.root.join("build"),
+    )
+    .unwrap();
+    let catalog: toml::Value =
+        toml::from_str(&fs::read_to_string(merged.join("packages/catalog.toml")).unwrap()).unwrap();
+    assert_eq!(catalog["format"].as_integer(), Some(6));
+    assert_eq!(
+        catalog["packages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["bench", "std"]
+    );
+    assert!(merged.join("packages/std/package.toml").is_file());
+    assert!(merged.join("packages/bench/package.toml").is_file());
 }

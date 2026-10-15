@@ -18,8 +18,8 @@ task main() {
     let typed_and_initialized: float = 1.25;
     let language = "Teal";
     let release = 1;
-    let interpolated = "Welcome to ${language} ${release}";
-    let wrapped = "{{${language}}}";
+    let interpolated = "Welcome to {language} {release}";
+    let wrapped = "{{{language}}}";
 
     // 首次赋值确定推演类型；显式类型无需初始化即可查询。
     inferred = 7;

@@ -9,8 +9,14 @@ pub ui::Length;
 pub ui::UiEvent;
 pub ui::node;
 host "std.bench.panel" as backend {
-    fn render(arg0: string);
-    fn event() -> {string: string};
+    fn render(arg0: string) -> none | Error;
+
+    fn event() -> { string: string } | Error;
 }
-pub fn render(root: ui::Node) { backend::render(ui::encode(root)); }
-pub fn event() -> ui::UiEvent { return ui::event(backend::event()); }
+pub fn render(root: ui::Node) -> none | Error {
+    backend::render(ui::encode(root) ?) ?;
+}
+
+pub fn event() -> ui::UiEvent | Error {
+    return ui::event(backend::event() ?) ?;
+}

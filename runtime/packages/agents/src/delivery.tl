@@ -17,22 +17,24 @@ pub class Receipt {
     pub script: Artifact,
     pub artifacts: Artifact[],
     pub program_digest: string,
-    pub runtime_profile: string,
+    pub tier: string,
     pub verification: VerificationReference[],
 }
-pub enum Validation { accepted { receipt: Receipt }, rejected { reason: string } }
+pub enum Validation {
+    accepted { receipt: Receipt },
+    rejected { reason: string }
+}
 
 /// 后续动作重新核验时比较同一次交付的文件和程序身份。
 pub fn same_receipt(previous: Receipt, current: Receipt) -> bool {
-    if previous.script.path != current.script.path || previous.script.sha256 != current.script.sha256
-        || previous.script.size != current.script.size
-        || previous.program_digest != current.program_digest
-        || previous.runtime_profile != current.runtime_profile
-        || previous.artifacts.len() != current.artifacts.len()
-        || previous.verification.len() != current.verification.len() { return false; }
+    if previous.script.path != current.script.path || previous.script.sha256 != current.script.sha256 || previous.script.size != current.script.size || previous.program_digest != current.program_digest || previous.tier != current.tier || previous.artifacts.len() != current.artifacts.len() || previous.verification.len() != current.verification.len() {
+        return false;
+    }
     let index = 0;
     loop {
-        if index >= previous.artifacts.len() { break; }
+        if index >= previous.artifacts.len() {
+            break;
+        }
         let left = previous.artifacts[index];
         let right = current.artifacts[index];
         if left.path != right.path || left.sha256 != right.sha256 || left.size != right.size {
@@ -42,15 +44,19 @@ pub fn same_receipt(previous: Receipt, current: Receipt) -> bool {
     }
     index = 0;
     loop {
-        if index >= previous.verification.len() { break; }
-        if previous.verification[index].call_id != current.verification[index].call_id { return false; }
+        if index >= previous.verification.len() {
+            break;
+        }
+        if previous.verification[index].call_id != current.verification[index].call_id {
+            return false;
+        }
         index += 1;
     }
     return true;
 }
 
 /// 已接受收据的后续提交；调用方应在本次提交前重新执行 verify 并取得批准。
-pub task commit(receipt: Receipt, session_key: string, message: string, approval_id: string) -> string {
+pub task commit(receipt: Receipt, session_key: string, message: string, approval_id: string) -> string | Error {
     let paths: string[] = [];
     let hashes: string[] = [];
     let sizes: string[] = [];
@@ -60,18 +66,20 @@ pub task commit(receipt: Receipt, session_key: string, message: string, approval
         hashes.push(artifact.sha256);
         sizes.push(artifact.size);
     }
-    for reference in receipt.verification { ids.push(reference.call_id); }
-    return app::commit_delivery_or_throw(message, session_key, receipt.summary,
-        receipt.script.path, receipt.script.sha256, receipt.script.size,
-        paths, hashes, sizes, receipt.program_digest, receipt.runtime_profile, ids, approval_id).await;
+    for reference in receipt.verification {
+        ids.push(reference.call_id);
+    }
+    return app::commit_delivery(message, session_key, receipt.summary, receipt.script.path, receipt.script.sha256, receipt.script.size, paths, hashes, sizes, receipt.program_digest, receipt.tier, ids, approval_id).await ?;
 }
 
 fn safe_relative(path: string) -> bool {
-    if path == "" || path.starts_with("/") || path.starts_with(".teal/")
-        || path.contains("\\") || path.contains(":")
-        || path.contains("\n") || path.contains("\r") { return false; }
+    if path == "" || path.starts_with("/") || path.starts_with(".teal/") || path.contains("\\") || path.contains(":") || path.contains("\n") || path.contains("\r") {
+        return false;
+    }
     for segment in path.split("/") {
-        if segment == "" || segment == "." || segment == ".." { return false; }
+        if segment == "" || segment == "." || segment == ".." {
+            return false;
+        }
     }
     return true;
 }
@@ -80,7 +88,9 @@ fn find(receipts: app::ToolReceipt[], id: string) -> app::ToolReceipt | none {
     let matched: app::ToolReceipt | none = none;
     for receipt in receipts {
         if receipt.call_id == id {
-            if matched != none { return none; }
+            if matched != none {
+                return none;
+            }
             matched = receipt;
         }
     }
@@ -99,13 +109,12 @@ fn field(receipt: app::ToolReceipt, key: string) -> string {
 }
 
 fn exit_zero(receipt: app::ToolReceipt) -> bool {
-    return receipt.success && json::has(receipt.value_json, "/exit_code")
-        && json::read_number(receipt.value_json, "/exit_code") == "0";
+    return receipt.success && json::has(receipt.value_json, "/exit_code") && json::read_number(receipt.value_json, "/exit_code") == "0";
 }
 
 /// 用模型本轮引用的真实调用和当前文件内容核验脚本交付。
 /// 验证失败返回原因，不把模型摘要或文件存在性当作成功证据。
-pub task verify(delivery: TaskDelivery, session_key: string) -> Validation {
+pub task verify(delivery: TaskDelivery, session_key: string) -> Validation | Error {
     if delivery.summary.trim() == "" || delivery.summary.len() > 16384 {
         return Validation.rejected { reason: "Delivery summary is invalid" };
     }
@@ -134,27 +143,40 @@ pub task verify(delivery: TaskDelivery, session_key: string) -> Validation {
     let executed: app::ToolReceipt | none = none;
     let has_test = false;
     for receipt in selected {
-        if receipt.tool != "teal.fmt_check" && receipt.tool != "teal.check"
-            && receipt.tool != "teal.test" && receipt.tool != "teal.run" {
+        if receipt.tool != "teal.fmt_check" && receipt.tool != "teal.check" && receipt.tool != "teal.test" && receipt.tool != "teal.run" {
             return Validation.rejected { reason: "Verification call is not a delivery stage" };
         }
-        if receipt.tool == "teal.fmt_check" { formatted = receipt; }
-        if receipt.tool == "teal.check" { checked = receipt; }
-        if receipt.tool == "teal.test" { has_test = true; }
-        if receipt.tool == "teal.run" { executed = receipt; }
+        if receipt.tool == "teal.fmt_check" {
+            formatted = receipt;
+        }
+        if receipt.tool == "teal.check" {
+            checked = receipt;
+        }
+        if receipt.tool == "teal.test" {
+            has_test = true;
+        }
+        if receipt.tool == "teal.run" {
+            executed = receipt;
+        }
     }
-    if formatted == none { return Validation.rejected { reason: "Format receipt is required" }; }
-    if checked == none { return Validation.rejected { reason: "Check receipt is required" }; }
+    if formatted == none {
+        return Validation.rejected { reason: "Format receipt is required" };
+    }
+    if checked == none {
+        return Validation.rejected { reason: "Check receipt is required" };
+    }
     // 是否必须运行测试由当前编译程序的真实 `@test` 清单决定；无测试脚本允许
     // `fmt_check → check → run`，有测试脚本则必须在检查与执行之间提供 `teal.test`。
-    if executed == none { return Validation.rejected { reason: "Run receipt is required" }; }
+    if executed == none {
+        return Validation.rejected { reason: "Run receipt is required" };
+    }
     if !exit_zero(formatted) || !exit_zero(checked) || !exit_zero(executed) {
         return Validation.rejected { reason: "A required verification command failed" };
     }
     if !(formatted.sequence < checked.sequence && checked.sequence < executed.sequence) {
         return Validation.rejected { reason: "Verification commands are out of order" };
     }
-    let hash = app::file_evidence_or_throw(delivery.script).await;
+    let hash = app::file_evidence(delivery.script).await ?;
     if !hash.available {
         return Validation.rejected { reason: "Delivery script evidence is unavailable: " + hash.error };
     }
@@ -164,7 +186,7 @@ pub task verify(delivery: TaskDelivery, session_key: string) -> Validation {
         if path == "" {
             return Validation.rejected { reason: "Verification path differs from the delivered script" };
         }
-        let verified_path = app::file_evidence_or_throw(path).await;
+        let verified_path = app::file_evidence(path).await ?;
         if !verified_path.available || verified_path.path != script_path {
             return Validation.rejected { reason: "Verification path differs from the delivered script" };
         }
@@ -173,13 +195,14 @@ pub task verify(delivery: TaskDelivery, session_key: string) -> Validation {
         return Validation.rejected { reason: "Script content changed after formatting" };
     }
     let digest = field(checked, "program_digest");
-    let profile = field(checked, "runtime_profile");
-    if digest == "" || digest != field(executed, "program_digest")
-        || profile == "" || profile != field(executed, "runtime_profile") {
+    let profile = field(checked, "tier");
+    if digest == "" || digest != field(executed, "program_digest") || profile == "" || profile != field(executed, "tier") {
         return Validation.rejected { reason: "Program or runtime profile differs across verification" };
     }
     for receipt in selected {
-        if receipt.tool != "teal.test" { continue; }
+        if receipt.tool != "teal.test" {
+            continue;
+        }
         if !exit_zero(receipt) {
             return Validation.rejected { reason: "A required verification command failed" };
         }
@@ -190,16 +213,15 @@ pub task verify(delivery: TaskDelivery, session_key: string) -> Validation {
         if path == "" {
             return Validation.rejected { reason: "Verification path differs from the delivered script" };
         }
-        let verified_path = app::file_evidence_or_throw(path).await;
+        let verified_path = app::file_evidence(path).await ?;
         if !verified_path.available || verified_path.path != script_path {
             return Validation.rejected { reason: "Verification path differs from the delivered script" };
         }
-        if digest != field(receipt, "program_digest")
-            || profile != field(receipt, "runtime_profile") {
+        if digest != field(receipt, "program_digest") || profile != field(receipt, "tier") {
             return Validation.rejected { reason: "Program or runtime profile differs across verification" };
         }
     }
-    let current = app::current_program_or_throw(delivery.script, profile).await;
+    let current = app::current_program(delivery.script, profile).await ?;
     if !current.available {
         return Validation.rejected { reason: "Current program verification is unavailable: " + current.error };
     }
@@ -216,18 +238,20 @@ pub task verify(delivery: TaskDelivery, session_key: string) -> Validation {
             return Validation.rejected { reason: "Artifact path is invalid or duplicated" };
         }
         paths.push(path);
-        let file = app::file_evidence_or_throw(path).await;
+        let file = app::file_evidence(path).await ?;
         if !file.available {
             return Validation.rejected { reason: "Artifact evidence is unavailable: " + file.error };
         }
         artifacts.push(Artifact { path: path, sha256: file.sha256, size: file.size });
     }
-    return Validation.accepted { receipt: Receipt {
-        summary: delivery.summary,
-        script: Artifact { path: delivery.script, sha256: hash.sha256, size: hash.size },
-        artifacts: artifacts,
-        program_digest: digest,
-        runtime_profile: profile,
-        verification: delivery.verification,
-    } };
+    return Validation.accepted {
+        receipt: Receipt {
+            summary: delivery.summary,
+            script: Artifact { path: delivery.script, sha256: hash.sha256, size: hash.size },
+            artifacts: artifacts,
+            program_digest: digest,
+            tier: profile,
+            verification: delivery.verification,
+        }
+    };
 }

@@ -20,44 +20,9 @@ pub const PRODUCTS: &[ProductCrate] = &[
         root: "crates/teal-bench/src/lib.rs",
     },
     ProductCrate {
-        package: "teal-dap",
-        rustdoc_name: "teal_dap",
-        root: "crates/teal-dap/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-browser",
-        rustdoc_name: "teal_browser",
-        root: "crates/teal-browser/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-computer",
-        rustdoc_name: "teal_computer",
-        root: "crates/teal-computer/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-fmt",
-        rustdoc_name: "teal_fmt",
-        root: "crates/teal-fmt/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-lsp",
-        rustdoc_name: "teal_lsp",
-        root: "crates/teal-lsp/src/lib.rs",
-    },
-    ProductCrate {
         package: "teal-lsp-client",
         rustdoc_name: "teal_lsp_client",
         root: "crates/teal-lsp-client/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-text",
-        rustdoc_name: "teal_text",
-        root: "crates/teal-text/src/lib.rs",
-    },
-    ProductCrate {
-        package: "teal-web",
-        rustdoc_name: "teal_web",
-        root: "crates/teal-web/src/lib.rs",
     },
     ProductCrate {
         package: "teal-workbench-automation",

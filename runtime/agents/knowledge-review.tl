@@ -25,9 +25,9 @@ impl KnowledgeReviewer {
     }
 }
 
-task main() {
+task application() -> none | Error {
     let reviewer = KnowledgeReviewer {};
-    let input = Agent::receive_or_throw().await;
+    let input = Agent::receive().await ?;
     match input {
         Agent::Input.text { value } => {
             let verdict = reviewer.review(value).await;
@@ -35,7 +35,9 @@ task main() {
                 ReviewDecision.approve { proposal_id, source_digest, cited_refs } => {
                     Agent::emit("proposal_id", proposal_id);
                     Agent::emit("source_digest", source_digest);
-                    for reference in cited_refs { Agent::emit("cited_ref", reference); }
+                    for reference in cited_refs {
+                        Agent::emit("cited_ref", reference);
+                    }
                     Agent::emit("decision", "approve");
                 }
                 ReviewDecision.reject { proposal_id, source_digest, reason } => {
@@ -51,7 +53,21 @@ task main() {
                     Agent::emit("decision", "needs_evidence");
                 }
             }
+        } _ => {
+            Agent::emit("decision", "needs_evidence");
         }
-        _ => { Agent::emit("decision", "needs_evidence"); }
+    }
+}
+
+/// 入口显式处理应用错误，避免把失败当作成功结束。
+task main() -> int {
+    let result = application().await;
+    match result {
+        Error { .. } => {
+            print(result.message);
+            return 1;
+        } _ => {
+            return 0;
+        }
     }
 }

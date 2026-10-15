@@ -7,15 +7,8 @@ members = [
   "crates/teal-workbench-automation",
   "crates/teal-workbench-core",
   "crates/teal-workbench-services",
-  "crates/teal-web",
-  "crates/teal-browser",
-  "crates/teal-computer",
   "crates/teal-workspace",
-  "crates/teal-fmt",
-  "crates/teal-lsp",
-  "crates/teal-dap",
   "crates/teal-lsp-client",
-  "crates/teal-text",
   "tools/teal-xtask",
 ]
 
@@ -92,38 +85,29 @@ zmij = "1"
 quote = "1"
 syn = { version = "2", features = ["full", "parsing"] }
 zip = { version = "=8.2.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
-# Keep the extraction boundary reproducible without requiring a sibling checkout.
-# The revision is the first standalone teal-lang workspace commit consumed here.
-teal-abi = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
-teal-compiler = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
-teal-vm = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
-teal-core = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
-teal-packages = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
-teal-utils = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
-teal-host = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
-teal-security = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0", default-features = false }
-teal-agent = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
-teal-model = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
-teal-config = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
-teal-knowledge = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
-teal-runtime = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
-teal-test-support = { git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
-teal = { package = "teal-runtime", git = "https://github.com/dev-chee/teal-lang.git", rev = "11491542dbf56393a91df53ce68f2a26ec2efad1", version = "0.1.0" }
+# 所有语言包锁定同一提交；发行二进制与运行时制品必须来自该版本。
+teal-abi = { git = "https://github.com/dev-chee/teal-lang.git", rev = "963595f494a1dd1cf86b591cc12f8d3162325f1d", version = "0.1.0" }
+teal-compiler = { git = "https://github.com/dev-chee/teal-lang.git", rev = "963595f494a1dd1cf86b591cc12f8d3162325f1d", version = "0.1.0" }
+teal-vm = { git = "https://github.com/dev-chee/teal-lang.git", rev = "963595f494a1dd1cf86b591cc12f8d3162325f1d", version = "0.1.0" }
+teal-packages = { git = "https://github.com/dev-chee/teal-lang.git", rev = "963595f494a1dd1cf86b591cc12f8d3162325f1d", version = "0.1.0" }
+teal-utils = { git = "https://github.com/dev-chee/teal-lang.git", rev = "963595f494a1dd1cf86b591cc12f8d3162325f1d", version = "0.1.0" }
+teal-host = { git = "https://github.com/dev-chee/teal-lang.git", rev = "963595f494a1dd1cf86b591cc12f8d3162325f1d", version = "0.1.0" }
+teal-security = { git = "https://github.com/dev-chee/teal-lang.git", rev = "963595f494a1dd1cf86b591cc12f8d3162325f1d", version = "0.1.0", default-features = false }
+teal-agent = { git = "https://github.com/dev-chee/teal-lang.git", rev = "963595f494a1dd1cf86b591cc12f8d3162325f1d", version = "0.1.0" }
+teal-model = { git = "https://github.com/dev-chee/teal-lang.git", rev = "963595f494a1dd1cf86b591cc12f8d3162325f1d", version = "0.1.0" }
+teal-config = { git = "https://github.com/dev-chee/teal-lang.git", rev = "963595f494a1dd1cf86b591cc12f8d3162325f1d", version = "0.1.0" }
+teal-knowledge = { git = "https://github.com/dev-chee/teal-lang.git", rev = "963595f494a1dd1cf86b591cc12f8d3162325f1d", version = "0.1.0" }
+teal-runtime = { git = "https://github.com/dev-chee/teal-lang.git", rev = "963595f494a1dd1cf86b591cc12f8d3162325f1d", version = "0.1.0" }
+teal-test-support = { git = "https://github.com/dev-chee/teal-lang.git", rev = "963595f494a1dd1cf86b591cc12f8d3162325f1d", version = "0.1.0" }
+teal = { package = "teal-runtime", git = "https://github.com/dev-chee/teal-lang.git", rev = "963595f494a1dd1cf86b591cc12f8d3162325f1d", version = "0.1.0" }
 
 # teal-workbench dependencies
 teal-bench = { path = "crates/teal-bench" }
 teal-workbench-automation = { path = "crates/teal-workbench-automation" }
 teal-workbench-core = { path = "crates/teal-workbench-core" }
 teal-workbench-services = { path = "crates/teal-workbench-services" }
-teal-web = { path = "crates/teal-web" }
-teal-browser = { path = "crates/teal-browser" }
-teal-computer = { path = "crates/teal-computer" }
 teal-workspace = { path = "crates/teal-workspace" }
-teal-fmt = { path = "crates/teal-fmt" }
-teal-lsp = { path = "crates/teal-lsp" }
-teal-dap = { path = "crates/teal-dap" }
 teal-lsp-client = { path = "crates/teal-lsp-client" }
-teal-text = { path = "crates/teal-text" }
 [workspace.lints.rust]
 unexpected_cfgs = "warn"
 unused = { level = "allow", priority = -1 }
@@ -153,8 +137,6 @@ teal-agent = { workspace = true, features = ["codex-auth"] }
 teal-bench.workspace = true
 teal-config.workspace = true
 teal-compiler.workspace = true
-teal-core.workspace = true
-teal-fmt.workspace = true
 teal-host.workspace = true
 teal-model = { workspace = true, features = ["codex-auth"] }
 teal-runtime = { workspace = true, features = ["ffi"] }

@@ -11,12 +11,12 @@ use std::{
 };
 
 use directories::ProjectDirs;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use teal_workbench_core::{
     KeymapPreset, LayoutTree, PanelId, PanelSize, SelectionSet, SplitAxis, Window, WindowKind,
     WindowSet,
 };
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 use thiserror::Error;
 
@@ -96,7 +96,7 @@ pub enum PanelSessionState {
     /// 离线浏览器状态。
     Browser {
         /// 导航历史。
-        browser: teal_web::BrowserSession,
+        browser: teal_host::web::BrowserSession,
 
         /// 垂直视图偏移。
         scroll: usize,
@@ -490,19 +490,34 @@ mod tests {
     #[test]
     fn platform_paths_are_scoped_to_bench_not_the_legacy_ide_directory() {
         let paths = SessionPaths::discover().expect("platform paths should be available");
-        let has_bench_root = |path: &Path| {
-            path.components()
-                .map(|component| component.as_os_str().to_string_lossy())
-                .collect::<Vec<_>>()
-                .windows(2)
-                .any(|components| components[0] == "Teal" && components[1] == "Bench")
-        };
-        assert!(has_bench_root(&paths.config));
-        assert!(has_bench_root(&paths.state));
-        assert!(has_bench_root(&paths.cache));
-        assert!(paths.config.ends_with("config"));
+        #[cfg(windows)]
+        {
+            let has_bench_root = |path: &Path| {
+                path.components()
+                    .map(|component| component.as_os_str().to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .windows(2)
+                    .any(|components| components[0] == "Teal" && components[1] == "Bench")
+            };
+            assert!(has_bench_root(&paths.config));
+            assert!(has_bench_root(&paths.state));
+            assert!(has_bench_root(&paths.cache));
+            assert!(paths.config.ends_with("config"));
+            assert!(paths.cache.ends_with("cache"));
+        }
+        #[cfg(not(windows))]
+        {
+            let product_root = |path: &Path| {
+                matches!(
+                    path.file_name().and_then(|name| name.to_str()),
+                    Some("bench" | "dev.Teal.Bench")
+                )
+            };
+            assert!(product_root(&paths.config));
+            assert!(product_root(&paths.cache));
+            assert!(product_root(paths.state.parent().unwrap()));
+        }
         assert!(paths.state.ends_with("state"));
-        assert!(paths.cache.ends_with("cache"));
         for path in [&paths.config, &paths.state, &paths.cache] {
             assert!(
                 !path

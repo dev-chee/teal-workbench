@@ -6,7 +6,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-teal-security = { workspace = true, default-features = false }
+teal-host = { workspace = true, features = ["browser", "computer", "web"] }
+teal-security = { workspace = true, default-features = false, features = ["host-audit"] }
 base64.workspace = true
 tracing.workspace = true
 arboard.workspace = true
@@ -19,7 +20,6 @@ teal-workbench-core.workspace = true
 teal-agent.workspace = true
 teal-knowledge.workspace = true
 teal-model.workspace = true
-teal-web.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 url.workspace = true
@@ -38,8 +38,6 @@ teal-packages = { workspace = true, optional = true }
 teal-config = { workspace = true, optional = true }
 teal-vm = { workspace = true, optional = true }
 teal-lsp-client = { workspace = true, optional = true }
-teal-browser = { workspace = true, optional = true }
-teal-computer = { workspace = true, optional = true }
 teal-workspace = { workspace = true, optional = true }
 opentelemetry = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }
@@ -50,7 +48,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"], optional = t
 
 [features]
 agent-algorithms = ["dep:similar"]
-tools = ["agent-algorithms", "dep:teal-compiler", "dep:teal-packages", "dep:teal", "dep:teal-config", "dep:teal-vm", "dep:teal-lsp-client", "dep:teal-browser", "dep:teal-computer", "dep:teal-workspace"]
+tools = ["agent-algorithms", "dep:teal-compiler", "dep:teal-packages", "dep:teal", "dep:teal-config", "dep:teal-vm", "dep:teal-lsp-client", "dep:teal-workspace"]
 observability = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-appender", "dep:tracing-opentelemetry", "dep:tracing-subscriber"]
 
 [[test]]

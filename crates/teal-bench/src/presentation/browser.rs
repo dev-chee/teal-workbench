@@ -4,8 +4,8 @@
 
 use super::{
     AppCommand, Block, Borders, ClipboardAction, ClipboardOutcome, Color, Frame, InputEvent, Key,
-    Line, MenuItem, MouseButton, MouseEvent, MouseEventKind, Widget, WidgetAction, PanelKind,
-    PanelStatus, Paragraph, Rect, Style, TextViewState, WebDocument, plain_lines,
+    Line, MenuItem, MouseButton, MouseEvent, MouseEventKind, PanelKind, PanelStatus, Paragraph,
+    Rect, Style, TextViewState, WebDocument, Widget, WidgetAction, plain_lines,
     render_lines_with_selection,
 };
 
@@ -75,7 +75,7 @@ impl BrowserPanel {
     }
 
     pub(crate) fn session_state(&self) -> teal_workbench_services::PanelSessionState {
-        let mut browser = teal_web::BrowserSession {
+        let mut browser = teal_host::web::BrowserSession {
             history: self.history.clone(),
             index: self.history_index,
         };
@@ -88,7 +88,7 @@ impl BrowserPanel {
     }
 
     pub(crate) fn restore(
-        browser: &teal_web::BrowserSession,
+        browser: &teal_host::web::BrowserSession,
         scroll: usize,
         column: usize,
     ) -> Result<Self, String> {

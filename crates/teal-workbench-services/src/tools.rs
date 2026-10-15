@@ -10,18 +10,18 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use teal_agent::{ApprovalResponse, PermissionPrompt, ToolCall, ToolRegistry};
 use crate::{SearchService, run_command_blocking, run_program_blocking};
+#[cfg(test)]
+use serde_json::json;
+use sha2::{Digest, Sha256};
+#[cfg(test)]
+use teal_agent::{ActionContext, ActionSpec, ApprovalScope, Decision, PermissionProvider};
+use teal_agent::{ApprovalResponse, PermissionPrompt, ToolCall, ToolRegistry};
 use teal_vm::{
     ExternalCallRecovery, HostCallPreparation, HostError, HostFunctionDefinition, HostResource,
     HostResourceRequest, HostToolCheckpoint, HostToolEffect, HostToolExport, HostToolParameter,
     HostValue, ResourceAccess, RuntimeType,
 };
-#[cfg(test)]
-use serde_json::json;
-#[cfg(test)]
-use teal_agent::{ActionContext, ActionSpec, ApprovalScope, Decision, PermissionProvider};
-use sha2::{Digest, Sha256};
 use tokio::sync::{mpsc, oneshot};
 
 mod catalog;
@@ -31,35 +31,30 @@ mod source;
 pub use source::SourceQuerySnapshot;
 
 mod approval;
-mod headless;
-mod transactions;
 mod changeset;
-mod mutation;
-mod requests;
-mod browser;
+mod headless;
 mod media;
+mod mutation;
 mod plan;
-mod computer;
+mod requests;
 mod toolchain;
+mod transactions;
 
 pub use approval::ChannelApproval;
+use changeset::ChangeSetInput;
 pub use headless::HeadlessWorkspaceTools;
 pub use mutation::MutationKind;
-pub use requests::{ChangeSetRequest, MutationRequest};
-use changeset::ChangeSetInput;
-use browser::{normalized_web_url, register_browser_hosts};
-#[cfg(test)]
-use browser::browser_preparation;
-use computer::register_computer_hosts;
 use plan::register_plan_host;
-#[cfg(test)]
-use computer::computer_preparation;
-use toolchain::{
-    preflight_task_toolchain, teal_executable, teal_format_executable, teal_tool_arguments,
-    teal_tool_executable, TaskToolchain, ToolchainPreflightError,
-};
+pub use requests::{ChangeSetRequest, MutationRequest};
+use teal_host::browser::register_browser_hosts;
+use teal_host::computer::register_computer_hosts;
+use teal_host::web::{WebBackend, register_web_hosts};
 #[cfg(test)]
 use toolchain::teal_tool_stem;
+use toolchain::{
+    TaskToolchain, ToolchainPreflightError, preflight_task_toolchain, teal_executable,
+    teal_format_executable, teal_tool_arguments, teal_tool_executable,
+};
 
 /// 返回与当前工作台同目录的 Teal 主程序。
 pub fn distributed_teal_executable() -> Option<PathBuf> {
@@ -98,8 +93,8 @@ pub struct WorkspaceTools {
     /// 阶段任务的精确写入集合；读取仍受工作区边界控制。
     write_scope: Option<std::collections::BTreeSet<PathBuf>>,
     verification_gate: Arc<Mutex<VerificationGate>>,
-    browser: teal_browser::BrowserManager,
-    computer: Arc<dyn teal_computer::ComputerBackend>,
+    browser: teal_host::browser::BrowserManager,
+    computer: Arc<dyn teal_host::computer::ComputerBackend>,
 }
 
 #[derive(Default)]
@@ -121,13 +116,13 @@ enum VerificationStage {
     },
     Checked {
         source_digest: String,
-        runtime_profile: String,
+        tier: String,
         program_digest: String,
     },
     /// 编译检查之后又成功运行了登记测试；测试证据沿用同一份程序摘要。
     Tested {
         source_digest: String,
-        runtime_profile: String,
+        tier: String,
         program_digest: String,
     },
 }
@@ -192,8 +187,11 @@ impl WorkspaceTools {
             open_buffers: Arc::default(),
             write_scope: None,
             verification_gate: Arc::new(Mutex::new(VerificationGate::default())),
-            browser: teal_browser::BrowserManager::default(),
-            computer: teal_computer::platform_backend(),
+            browser: teal_host::browser::BrowserManager::default()
+                .with_audit_context(teal_security::process_context()),
+            computer: teal_host::computer::platform_backend_with_audit(
+                teal_security::process_context(),
+            ),
         }
     }
 
@@ -234,7 +232,7 @@ impl WorkspaceTools {
         &self,
         name: &str,
         path: &Path,
-        runtime_profile: &str,
+        tier: &str,
         source_digest: &str,
         program_digest: Option<&str>,
     ) -> Result<(), HostError> {
@@ -262,10 +260,10 @@ impl WorkspaceTools {
             "teal.test" => match stage {
                 Some(VerificationStage::Checked {
                     source_digest: checked_source,
-                    runtime_profile: checked_profile,
+                    tier: checked_profile,
                     program_digest: checked_program,
                 }) if checked_source == source_digest
-                    && checked_profile == runtime_profile
+                    && checked_profile == tier
                     && program_digest == Some(checked_program.as_str()) =>
                 {
                     Ok(())
@@ -280,20 +278,20 @@ impl WorkspaceTools {
             "teal.run" => match stage {
                 Some(VerificationStage::Checked {
                     source_digest: checked_source,
-                    runtime_profile: checked_profile,
+                    tier: checked_profile,
                     program_digest: checked_program,
                 }) if checked_source == source_digest
-                    && checked_profile == runtime_profile
+                    && checked_profile == tier
                     && program_digest == Some(checked_program.as_str()) =>
                 {
                     Ok(())
                 }
                 Some(VerificationStage::Tested {
                     source_digest: checked_source,
-                    runtime_profile: checked_profile,
+                    tier: checked_profile,
                     program_digest: checked_program,
                 }) if checked_source == source_digest
-                    && checked_profile == runtime_profile
+                    && checked_profile == tier
                     && program_digest == Some(checked_program.as_str()) =>
                 {
                     Ok(())
@@ -317,7 +315,7 @@ impl WorkspaceTools {
         &self,
         name: &str,
         path: &Path,
-        runtime_profile: &str,
+        tier: &str,
         source_digest: &str,
         exit_code: i32,
         program_digest: &str,
@@ -347,7 +345,7 @@ impl WorkspaceTools {
                         path.to_owned(),
                         VerificationStage::Checked {
                             source_digest: source_digest.to_owned(),
-                            runtime_profile: runtime_profile.to_owned(),
+                            tier: tier.to_owned(),
                             program_digest: program_digest.to_owned(),
                         },
                     );
@@ -359,7 +357,7 @@ impl WorkspaceTools {
                         path.to_owned(),
                         VerificationStage::Tested {
                             source_digest: source_digest.to_owned(),
-                            runtime_profile: runtime_profile.to_owned(),
+                            tier: tier.to_owned(),
                             program_digest: program_digest.to_owned(),
                         },
                     );
@@ -463,8 +461,7 @@ impl WorkspaceTools {
             WorkspaceOperation::WorkspaceApplyChangeset
             | WorkspaceOperation::WorkspaceMove
             | WorkspaceOperation::WorkspaceSearch
-            | WorkspaceOperation::WorkspaceRun
-            | WorkspaceOperation::WebFetch => None,
+            | WorkspaceOperation::WorkspaceRun => None,
         };
         if let Some(access) = path_access {
             let input = string_argument(&arguments, 0, "path")?;
@@ -506,13 +503,6 @@ impl WorkspaceTools {
             resources.push(HostResourceRequest {
                 access: ResourceAccess::Read,
                 resource: HostResource::Path(self.root.clone()),
-            });
-        } else if operation == WorkspaceOperation::WebFetch {
-            let parsed = normalized_web_url(&string_argument(&arguments, 0, "url")?)?;
-            arguments[0] = HostValue::String(parsed.clone());
-            resources.push(HostResourceRequest {
-                access: ResourceAccess::Network,
-                resource: HostResource::Network(parsed),
             });
         }
         if operation == WorkspaceOperation::WorkspaceRun {
@@ -1026,30 +1016,28 @@ impl WorkspaceTools {
                 let executable = teal_tool_executable(name).ok_or_else(|| {
                     host_error("Cannot find the required Teal tool next to Teal Bench")
                 })?;
-                let runtime_profile = if operation == WorkspaceOperation::TealFmtCheck {
-                    "agent".to_owned()
+                let tier = if operation == WorkspaceOperation::TealFmtCheck {
+                    "agentic".to_owned()
                 } else {
-                    string_argument(arguments, 1, "runtime_profile")?
+                    string_argument(arguments, 1, "tier")?
                 };
                 let source_before = std::fs::read(&path).map_err(host_error)?;
                 let source_digest = crate::digest(&source_before);
                 let program_before = (operation != WorkspaceOperation::TealFmtCheck)
-                    .then(|| {
-                        crate::compile_digest_in_workspace(&self.root, &path, &runtime_profile)
-                    })
+                    .then(|| crate::compile_digest_in_workspace(&self.root, &path, &tier))
                     .transpose()
                     .map_err(host_error)?;
                 self.verify_before(
                     name,
                     &path,
-                    &runtime_profile,
+                    &tier,
                     &source_digest,
                     program_before.as_deref(),
                 )?;
                 let mut process_arguments = teal_tool_arguments(name, &path);
                 if operation != WorkspaceOperation::TealFmtCheck {
-                    process_arguments.push("--runtime-profile".into());
-                    process_arguments.push(runtime_profile.clone());
+                    process_arguments.push("--tier".into());
+                    process_arguments.push(tier.clone());
                 }
                 if operation == WorkspaceOperation::TealTest {
                     let filter = string_argument(arguments, 2, "filter")?;
@@ -1078,9 +1066,8 @@ impl WorkspaceTools {
                     return Err(host_error("Teal source changed while the tool was running"));
                 }
                 let program_digest = if let Some(before) = program_before {
-                    let after =
-                        crate::compile_digest_in_workspace(&self.root, &path, &runtime_profile)
-                            .map_err(host_error)?;
+                    let after = crate::compile_digest_in_workspace(&self.root, &path, &tier)
+                        .map_err(host_error)?;
                     if before != after {
                         self.verify_invalidated(&path);
                         return Err(host_error(
@@ -1094,25 +1081,21 @@ impl WorkspaceTools {
                 self.verify_after(
                     name,
                     &path,
-                    &runtime_profile,
+                    &tier,
                     &source_digest,
                     output.status,
                     &program_digest,
                 );
                 Ok(toolchain_result(
                     &path,
-                    &runtime_profile,
+                    &tier,
                     source_digest,
                     program_digest,
                     output.status,
                     output.output,
                 ))
             }
-            WorkspaceOperation::WebFetch => {
-                let url = string_argument(arguments, 0, "url")?;
-                let document = teal_web::fetch_blocking(&url).map_err(host_error)?;
-                Ok(HostValue::String(document.lines.join("\n")))
-            }
+
             WorkspaceOperation::WorkspaceDiagnostics => {
                 let path = string_argument(arguments, 0, "path")?;
                 json_to_host(self.diagnostic_records(&path)?)
@@ -1302,7 +1285,7 @@ const TOOL_CAPABILITIES: [&str; 13] = [
     "browser.interact",
     "computer.inspect",
     "computer.interact",
-    "computer.raw_input",
+    "computer.raw-input",
     "agent.plan",
 ];
 
@@ -1342,22 +1325,28 @@ impl WorkspaceToolRuntime {
         let mut registry = teal::HostRegistry::standard();
         teal::register_process_tools(&mut registry)?;
         register_workspace_hosts(&mut registry, Arc::clone(&tools))?;
-        register_browser_hosts(&mut registry, tools.browser.clone())?;
-        register_computer_hosts(&mut registry, Arc::clone(&tools.computer))?;
+        register_web_hosts(
+            &mut registry,
+            "std.bench.web",
+            WebBackend::new(teal_security::process_context().into()),
+        )?;
+        register_browser_hosts(&mut registry, "std.bench.browser", tools.browser.clone())?;
+        register_computer_hosts(
+            &mut registry,
+            "std.bench.computer",
+            Arc::clone(&tools.computer),
+        )?;
         // 计划记录只属于 Agent 工具目录：脚本 Host 目录不暴露更新计划的入口。
         register_plan_host(&mut registry)?;
         let grant = grant_workspace_resources(
-            teal::HostExecutionGrant::core_only("teal-bench/workspace-tools/v4")
-                .allow_capabilities(TOOL_CAPABILITIES)
+            teal::HostExecutionGrant::deny_all("teal-bench/workspace-tools/v4")
+                .allow_permissions(TOOL_CAPABILITIES)
                 .allow_tools(TOOL_NAMES),
             &tools,
         );
         let grant = Arc::new(grant);
         let host = teal::NativeHostRuntime::builder()
-            .trusted()
-            .trusted()
-            .trusted()
-            .trusted()
+            .audit_context(teal_security::process_context())
             .console(false)
             .file_system(false)
             .standard_registry(registry)
@@ -1376,8 +1365,17 @@ impl WorkspaceToolRuntime {
         registry: &mut teal::HostRegistry,
     ) -> Result<(), teal::HostRegistryError> {
         register_workspace_hosts(registry, Arc::clone(&self.tools))?;
-        register_browser_hosts(registry, self.tools.browser.clone())?;
-        register_computer_hosts(registry, Arc::clone(&self.tools.computer))
+        register_web_hosts(
+            registry,
+            "std.bench.web",
+            WebBackend::new(teal_security::process_context().into()),
+        )?;
+        register_browser_hosts(registry, "std.bench.browser", self.tools.browser.clone())?;
+        register_computer_hosts(
+            registry,
+            "std.bench.computer",
+            Arc::clone(&self.tools.computer),
+        )
     }
 
     /// 刷新工具准备阶段可见的打开文档身份与修订。
@@ -1404,8 +1402,8 @@ impl WorkspaceToolRuntime {
         capabilities: &std::collections::BTreeSet<String>,
     ) -> Arc<teal::HostExecutionGrant> {
         Arc::new(grant_workspace_resources(
-            teal::HostExecutionGrant::core_only("teal-bench/script-tools/v1")
-                .allow_capabilities(capabilities.iter().cloned()),
+            teal::HostExecutionGrant::deny_all("teal-bench/script-tools/v1")
+                .allow_permissions(capabilities.iter().cloned()),
             &self.tools,
         ))
     }
@@ -1425,8 +1423,13 @@ impl WorkspaceToolRuntime {
         );
         let tools = Arc::new(tools);
         register_workspace_hosts(registry, Arc::clone(&tools))?;
-        register_browser_hosts(registry, tools.browser.clone())?;
-        register_computer_hosts(registry, Arc::clone(&tools.computer))
+        register_web_hosts(
+            registry,
+            "std.bench.web",
+            WebBackend::new(teal_security::process_context().into()),
+        )?;
+        register_browser_hosts(registry, "std.bench.browser", tools.browser.clone())?;
+        register_computer_hosts(registry, "std.bench.computer", Arc::clone(&tools.computer))
     }
 
     /// 通过通用 Host 工具桥建立模型目录，不复制 DataShape、回调或检查点处理。
@@ -1617,7 +1620,7 @@ fn tool_result(value: &str, checkpoint: Option<String>) -> HostValue {
 
 fn toolchain_result(
     path: &Path,
-    runtime_profile: &str,
+    tier: &str,
     source_digest: String,
     program_digest: String,
     exit_code: i32,
@@ -1637,8 +1640,8 @@ fn toolchain_result(
             HostValue::String(path.to_string_lossy().into_owned()),
         ),
         (
-            HostValue::String("runtime_profile".into()),
-            HostValue::String(runtime_profile.into()),
+            HostValue::String("tier".into()),
+            HostValue::String(tier.into()),
         ),
         (
             HostValue::String("source_digest".into()),
@@ -1741,18 +1744,21 @@ mod tests {
     }
 
     impl FakeComputer {
-        fn result<T>(&self, value: T) -> Result<T, teal_computer::ComputerError> {
+        fn result<T>(&self, value: T) -> Result<T, teal_host::computer::ComputerError> {
             self.failure.map_or(Ok(value), |message| {
-                Err(teal_computer::ComputerError::Automation(message.into()))
+                Err(teal_host::computer::ComputerError::Automation(
+                    message.into(),
+                ))
             })
         }
     }
 
-    impl teal_computer::ComputerBackend for FakeComputer {
+    impl teal_host::computer::ComputerBackend for FakeComputer {
         fn list_windows(
             &self,
-        ) -> Result<Vec<teal_computer::ComputerWindow>, teal_computer::ComputerError> {
-            self.result(vec![teal_computer::ComputerWindow {
+        ) -> Result<Vec<teal_host::computer::ComputerWindow>, teal_host::computer::ComputerError>
+        {
+            self.result(vec![teal_host::computer::ComputerWindow {
                 process_id: 7,
                 window_handle: "42".into(),
                 title: "fixture".into(),
@@ -1762,10 +1768,11 @@ mod tests {
 
         fn snapshot(
             &self,
-            window: &teal_computer::ComputerWindow,
-        ) -> Result<teal_computer::ComputerSnapshot, teal_computer::ComputerError> {
-            self.result(teal_computer::ComputerSnapshot {
-                window: teal_computer::ComputerWindow {
+            window: &teal_host::computer::ComputerWindow,
+        ) -> Result<teal_host::computer::ComputerSnapshot, teal_host::computer::ComputerError>
+        {
+            self.result(teal_host::computer::ComputerSnapshot {
+                window: teal_host::computer::ComputerWindow {
                     generation: window.generation + 1,
                     ..window.clone()
                 },
@@ -1775,32 +1782,32 @@ mod tests {
 
         fn invoke(
             &self,
-            _: &teal_computer::ComputerWindow,
+            _: &teal_host::computer::ComputerWindow,
             _: &str,
-        ) -> Result<(), teal_computer::ComputerError> {
+        ) -> Result<(), teal_host::computer::ComputerError> {
             self.result(())
         }
         fn set_value(
             &self,
-            _: &teal_computer::ComputerWindow,
+            _: &teal_host::computer::ComputerWindow,
             _: &str,
             _: &str,
-        ) -> Result<(), teal_computer::ComputerError> {
+        ) -> Result<(), teal_host::computer::ComputerError> {
             self.result(())
         }
         fn raw_click(
             &self,
-            _: &teal_computer::ComputerWindow,
+            _: &teal_host::computer::ComputerWindow,
             _: &str,
-        ) -> Result<(), teal_computer::ComputerError> {
+        ) -> Result<(), teal_host::computer::ComputerError> {
             self.result(())
         }
         fn raw_keys(
             &self,
-            _: &teal_computer::ComputerWindow,
+            _: &teal_host::computer::ComputerWindow,
             _: &str,
             _: &str,
-        ) -> Result<(), teal_computer::ComputerError> {
+        ) -> Result<(), teal_host::computer::ComputerError> {
             self.result(())
         }
     }
@@ -1808,7 +1815,12 @@ mod tests {
     #[test]
     fn computer_hosts_export_the_six_capability_partitioned_tools() {
         let mut registry = teal::HostRegistry::standard();
-        register_computer_hosts(&mut registry, Arc::new(FakeComputer { failure: None })).unwrap();
+        register_computer_hosts(
+            &mut registry,
+            "std.bench.computer",
+            Arc::new(FakeComputer { failure: None }),
+        )
+        .unwrap();
         for function in [
             "list_windows",
             "snapshot",
@@ -1820,139 +1832,6 @@ mod tests {
             assert!(
                 registry.contains("std.bench.computer", function),
                 "{function}"
-            );
-        }
-    }
-
-    #[test]
-    fn computer_preparation_binds_generation_and_element_to_application_resources() {
-        let list = computer_preparation("computer.list_windows", &[]).unwrap();
-        assert!(matches!(
-            &list.resources[..],
-            [HostResourceRequest {
-                access: ResourceAccess::Read,
-                resource: HostResource::Application { namespace, identity },
-            }] if namespace == "computer" && identity == "windows"
-        ));
-        let arguments = [
-            HostValue::Int(7),
-            HostValue::String("42".into()),
-            HostValue::Int(3),
-            HostValue::String("1.2.3".into()),
-        ];
-        let action = computer_preparation("computer.invoke", &arguments).unwrap();
-        assert!(matches!(
-            &action.resources[..],
-            [HostResourceRequest {
-                access: ResourceAccess::Write,
-                resource: HostResource::Application { namespace, identity },
-            }] if namespace == "computer" && identity == "7/42/3/1.2.3"
-        ));
-    }
-
-    #[test]
-    fn web_and_browser_preparation_bind_canonical_network_resources() {
-        let web = WorkspaceTools::new(
-            tempfile::tempdir().unwrap().path(),
-            PathBuf::new(),
-            mpsc::channel(1).0,
-            mpsc::channel(1).0,
-            teal_lsp_client::DiagnosticStore::default(),
-        );
-        let prepared = web
-            .prepare(
-                WorkspaceOperation::WebFetch,
-                &[HostValue::String("https://example.com/a/../api".into())],
-            )
-            .unwrap();
-        assert!(
-            matches!(&prepared.resources[..], [HostResourceRequest { access: ResourceAccess::Network, resource: HostResource::Network(url) }] if url == "https://example.com/api")
-        );
-        let browser = browser_preparation(
-            None,
-            "browser.open",
-            &[
-                HostValue::String("session".into()),
-                HostValue::String("https://example.com/path".into()),
-            ],
-        )
-        .unwrap();
-        assert!(
-            matches!(&browser.resources[..], [_, HostResourceRequest { access: ResourceAccess::Network, resource: HostResource::Network(url) }] if url == "https://example.com/path")
-        );
-        let allow_network = browser_preparation(
-            None,
-            "browser.allow_network",
-            &[
-                HostValue::String("session".into()),
-                HostValue::String("https://example.com/a/../next#fragment".into()),
-            ],
-        )
-        .unwrap();
-        assert!(matches!(
-            &allow_network.arguments[..],
-            [HostValue::String(session), HostValue::String(url)]
-                if session == "session" && url == "https://example.com/next"
-        ));
-        assert!(matches!(
-            &allow_network.resources[..],
-            [
-                HostResourceRequest {
-                    access: ResourceAccess::Write,
-                    resource: HostResource::Application { namespace, identity },
-                },
-                HostResourceRequest {
-                    access: ResourceAccess::Network,
-                    resource: HostResource::Network(url),
-                }
-            ] if namespace == "browser" && identity == "session" && url == "https://example.com/next"
-        ));
-        let screenshot = browser_preparation(
-            None,
-            "browser.screenshot",
-            &[
-                HostValue::String("session".into()),
-                HostValue::String("page".into()),
-                HostValue::Int(3),
-            ],
-        )
-        .unwrap();
-        assert!(matches!(
-            &screenshot.resources[..],
-            [HostResourceRequest {
-                access: ResourceAccess::Read,
-                resource: HostResource::Application { namespace, identity },
-            }] if namespace == "browser" && identity == "session/page/3"
-        ));
-        for url in ["file:///secret", "https://user:pass@example.com/"] {
-            assert!(
-                web.prepare(
-                    WorkspaceOperation::WebFetch,
-                    &[HostValue::String(url.into())]
-                )
-                .is_err()
-            );
-            assert!(
-                browser_preparation(
-                    None,
-                    "browser.open",
-                    &[
-                        HostValue::String("session".into()),
-                        HostValue::String(url.into())
-                    ]
-                )
-                .is_err()
-            );
-            assert!(
-                browser_preparation(
-                    None,
-                    "browser.allow_network",
-                    &[
-                        HostValue::String("session".into()),
-                        HostValue::String(url.into())
-                    ]
-                )
-                .is_err()
             );
         }
     }
@@ -2166,7 +2045,7 @@ mod tests {
         std::fs::write(&script, "fn main() {}\n").unwrap();
         let result = toolchain_result(
             &script,
-            "agent",
+            "agentic",
             "source-digest".into(),
             "program-digest".into(),
             0,
@@ -2188,7 +2067,7 @@ mod tests {
             field("path"),
             &HostValue::String(script.to_string_lossy().into_owned())
         );
-        assert_eq!(field("runtime_profile"), &HostValue::String("agent".into()));
+        assert_eq!(field("tier"), &HostValue::String("agentic".into()));
         assert_eq!(
             field("source_digest"),
             &HostValue::String("source-digest".into())
@@ -2231,8 +2110,8 @@ mod tests {
 
         let mut run = teal_tool_arguments("teal.run", path);
         run.extend([
-            "--runtime-profile".to_owned(),
-            "agent".to_owned(),
+            "--tier".to_owned(),
+            "agentic".to_owned(),
             "--permission-file".to_owned(),
             "permissions.toml".to_owned(),
         ]);
@@ -2240,8 +2119,8 @@ mod tests {
             run,
             [
                 "fixture.tl",
-                "--runtime-profile",
-                "agent",
+                "--tier",
+                "agentic",
                 "--permission-file",
                 "permissions.toml",
             ]
@@ -2269,7 +2148,7 @@ mod tests {
                 WorkspaceOperation::TealRun,
                 &[
                     HostValue::String("main.tl".into()),
-                    HostValue::String("agent".into()),
+                    HostValue::String("agentic".into()),
                     HostValue::String("permissions.toml".into()),
                 ],
             )
@@ -2534,7 +2413,7 @@ mod tests {
         // `filter` 是必填参数，模型用空串表示“运行全部”，与宿主签名一致。
         assert_eq!(
             tests.input.json_schema()["required"],
-            json!(["path", "runtime_profile", "filter"])
+            json!(["path", "tier", "filter"])
         );
         assert_eq!(tests.input.json_schema()["type"], "object");
     }
@@ -2738,6 +2617,19 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn agent_registry_authorizes_invokes_and_returns_workspace_checkpoint() {
+        struct TestAudit;
+        impl teal_security::AuditSink for TestAudit {
+            fn append(
+                &self,
+                _: &teal_security::Event,
+            ) -> Result<teal_security::Receipt, teal_security::AuditError> {
+                Ok(teal_security::Receipt {
+                    sequence: 1,
+                    hash: "1".repeat(64),
+                })
+            }
+        }
+        let _ = teal_security::install_process_sink(Arc::new(TestAudit));
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("file.txt");
         std::fs::write(&path, "before").unwrap();
@@ -2763,15 +2655,16 @@ mod tests {
         });
         let permissions = Arc::new(RecordingAllow::default());
         let mutation = tokio::spawn(async move {
-            let request = mutation_rx
-                .recv()
-                .await
-                .expect("workspace mutation request");
+            let request =
+                tokio::time::timeout(std::time::Duration::from_secs(5), mutation_rx.recv())
+                    .await
+                    .expect("authorized workspace mutation must be dispatched")
+                    .expect("workspace mutation request");
             assert_eq!(request.path, normalize(&path));
             assert!(matches!(request.kind, MutationKind::Write(ref text) if text == "after"));
             request.response.send(Ok(())).unwrap();
         });
-        let agent = teal_agent::Agent::new(
+        let agent = teal_agent::Agent::builder(
             teal_agent::AgentConfig {
                 model: test_model_session("test-model"),
                 compaction_model: None,
@@ -2779,8 +2672,10 @@ mod tests {
                 limits: teal_agent::RuntimeLimits::default(),
             },
             model,
-            tools,
         )
+        .grant(runtime.agent_grant())
+        .tools(tools)
+        .build()
         .with_permissions(permissions.clone());
         let result = agent
             .run(
@@ -2864,7 +2759,11 @@ mod tests {
         let resolved: serde_json::Value = serde_json::from_str(serialized).unwrap();
         for (index, suffix) in ["first.tl", "nested\\second.tl"].into_iter().enumerate() {
             let path = resolved["files"][index]["path"].as_str().unwrap();
-            assert!(path.ends_with(suffix), "{path} must resolve under the root");
+            assert!(
+                path.replace('\\', "/")
+                    .ends_with(&suffix.replace('\\', "/")),
+                "{path} must resolve under the root"
+            );
         }
 
         let escape = json!({"files": [{"path": "../escape.tl", "patch": patch}]}).to_string();

@@ -3,11 +3,11 @@
 //! 队列携带发起任务的跨度和订阅器；事件在主循环处理时恢复上下文。
 //! 任务监督器管理异步任务，阻塞工作线程的结束仍由具体服务协调。
 
-use teal_workbench_services::tools::{ApprovalPrompt, ChangeSetRequest, MutationRequest};
-use teal_agent::AgentEvent;
-use teal_workbench_core::Message;
-use teal_lsp_client::{LspClient, LspEvent};
 use std::{future::Future, sync::Arc};
+use teal_agent::AgentEvent;
+use teal_lsp_client::{LspClient, LspEvent};
+use teal_workbench_core::Message;
+use teal_workbench_services::tools::{ApprovalPrompt, ChangeSetRequest, MutationRequest};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::instrument::WithSubscriber as _;
 
@@ -110,7 +110,7 @@ pub(crate) enum RuntimeEvent {
     BrowserLoaded {
         panel: teal_workbench_core::PanelId,
         sequence: u64,
-        result: Result<teal_web::WebDocument, String>,
+        result: Result<teal_host::web::WebDocument, String>,
     },
     /// 脚本执行后的注册和信任快照，界面动作仍需通过桥接处理。
     ScriptFinished(Result<crate::app::scripting::Completed, String>),
@@ -119,7 +119,7 @@ pub(crate) enum RuntimeEvent {
     /// 由源码 Agent 应用发布的模型或界面事件。
     AgentAppEvent(teal_agent::RuntimeAgentEvent),
     /// 源码 Agent 的共享控制目录已就绪。
-    AgentAppReady(teal_agent::RuntimeServices),
+    AgentAppReady(Box<teal_agent::RuntimeServices>),
     /// 由主线程捕获当前打开缓冲区后完成的只读工作区基线请求。
     AgentAppBaseline {
         reply: tokio::sync::oneshot::Sender<Result<String, String>>,

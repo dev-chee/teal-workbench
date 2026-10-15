@@ -40,7 +40,7 @@ pub struct DeliveryReceipt {
     /// `teal.check` 与 `teal.run` 共同确认的程序摘要。
     pub program_digest: String,
     /// 生成程序摘要时使用的运行配置档。
-    pub runtime_profile: String,
+    pub tier: String,
     /// 被交付结果引用的工具调用。
     pub evidence: Vec<DeliveryVerification>,
     /// 验收时 Unix 毫秒时间戳。
@@ -64,7 +64,7 @@ pub fn delivery_is_current(workspace: &Path, receipt: &DeliveryReceipt) -> bool 
         return false;
     }
     let script = workspace.join(Path::new(&receipt.script.path));
-    compile_digest_in_workspace(&workspace, &script, &receipt.runtime_profile)
+    compile_digest_in_workspace(&workspace, &script, &receipt.tier)
         .is_ok_and(|digest| digest == receipt.program_digest)
 }
 
@@ -114,10 +114,10 @@ fn artifact(workspace: &Path, path: &Path) -> Result<DeliveryArtifact, String> {
 pub fn compile_digest_in_workspace(
     workspace: &Path,
     path: &Path,
-    profile: &str,
+    tier: &str,
 ) -> Result<String, String> {
-    let profile = teal::RuntimeProfile::builtin(profile)
-        .ok_or_else(|| format!("Unknown runtime profile `{profile}`"))?;
+    let tier = teal::RuntimeTier::from_name(tier)
+        .ok_or_else(|| format!("Unknown runtime tier `{tier}`"))?;
     let workspace = workspace
         .canonicalize()
         .map_err(|error| error.to_string())?;
@@ -132,7 +132,7 @@ pub fn compile_digest_in_workspace(
     let program = teal::compile_source(
         teal::Source::new(source_name, source),
         &loader,
-        teal::CompileOptions::default().with_runtime_profile(profile),
+        teal::CompileOptions::default().with_tier(tier),
     )
     .map_err(|errors| format!("Task program no longer compiles: {errors:?}"))?;
     let bytes = program.serialize().map_err(|error| error.to_string())?;
@@ -143,10 +143,10 @@ pub fn compile_digest_in_workspace(
 pub fn compile_test_names_in_workspace(
     workspace: &Path,
     path: &Path,
-    profile: &str,
+    tier: &str,
 ) -> Result<Vec<String>, String> {
-    let profile = teal::RuntimeProfile::builtin(profile)
-        .ok_or_else(|| format!("Unknown runtime profile `{profile}`"))?;
+    let tier = teal::RuntimeTier::from_name(tier)
+        .ok_or_else(|| format!("Unknown runtime tier `{tier}`"))?;
     let workspace = workspace
         .canonicalize()
         .map_err(|error| error.to_string())?;
@@ -161,7 +161,7 @@ pub fn compile_test_names_in_workspace(
     let program = teal::compile_source(
         teal::Source::new(source_name, source),
         &loader,
-        teal::CompileOptions::default().with_runtime_profile(profile),
+        teal::CompileOptions::default().with_tier(tier),
     )
     .map_err(|errors| format!("Task program no longer compiles: {errors:?}"))?;
     Ok(program
@@ -224,7 +224,7 @@ mod tests {
             "import \"../shared/helper.tl\" as helper;\nfn main() { print(helper::value()); }\n",
         );
         assert!(
-            compile_digest_in_workspace(&root_path, &root_path.join("src/main.tl"), "agent")
+            compile_digest_in_workspace(&root_path, &root_path.join("src/main.tl"), "agentic")
                 .is_ok()
         );
 
@@ -234,7 +234,7 @@ mod tests {
             "import \"../../outside/helper.tl\" as helper;\nfn main() { print(helper::value()); }\n",
         );
         let error =
-            compile_digest_in_workspace(&root_path, &root_path.join("src/escape.tl"), "agent")
+            compile_digest_in_workspace(&root_path, &root_path.join("src/escape.tl"), "agentic")
                 .unwrap_err();
         assert!(error.contains("outside the workspace"), "{error}");
     }
@@ -244,6 +244,6 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("main.tl");
         write(&path, "import \"std/json.tl\" as json;\nfn main() {}\n");
-        assert!(compile_digest_in_workspace(root.path(), &path, "agent").is_ok());
+        assert!(compile_digest_in_workspace(root.path(), &path, "agentic").is_ok());
     }
 }

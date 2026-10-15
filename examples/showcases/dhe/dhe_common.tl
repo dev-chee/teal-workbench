@@ -1,6 +1,5 @@
 @edition("2026");
 
-import "std/error.tl" as errors;
 // DHE Showcase 共享证据层：路径、进程、日志和追加式事件报告。
 import "std/crypto.tl" as crypto;
 import "std/fs.tl" as fs;
@@ -135,46 +134,46 @@ pub fn command(program: string, args: string[]) -> process::ProcessSpec {
     return spec;
 }
 
-pub task run_command(program: string, args: string[], cwd: string, timeout_ms: int) -> process::ProcessResult {
+pub task run_command(program: string, args: string[], cwd: string, timeout_ms: int) -> process::ProcessResult | Error {
     let spec = command(program, args);
     spec.cwd = cwd;
-    return process::run_or_throw(spec, timeout_ms). await;
+    return process::run(spec, timeout_ms).await ?;
 }
 
-pub task spawn_command(program: string, args: string[], cwd: string) -> process::ProcessHandle {
+pub task spawn_command(program: string, args: string[], cwd: string) -> process::ProcessHandle | Error {
     let spec = command(program, args);
     spec.cwd = cwd;
     spec.stdout = process::StreamTarget.discard;
     spec.stderr = process::StreamTarget.discard;
-    return process::spawn_or_throw(spec). await;
+    return process::spawn(spec).await ?;
 }
 
-pub task wait_command(handle: process::ProcessHandle, timeout_ms: int) -> process::ProcessResult {
-    return process::wait_or_throw(handle, timeout_ms). await;
+pub task wait_command(handle: process::ProcessHandle, timeout_ms: int) -> process::ProcessResult | Error {
+    return process::wait(handle, timeout_ms).await ?;
 }
 
-pub task terminate_command(handle: process::ProcessHandle) -> process::ProcessResult {
-    return process::terminate_or_throw(handle). await;
+pub task terminate_command(handle: process::ProcessHandle) -> process::ProcessResult | Error {
+    return process::terminate(handle).await ?;
 }
 
-pub task process_count(path: string) -> int {
-    return process::find_by_executable_or_throw(path). await.len();
+pub task process_count(path: string) -> int | Error {
+    return process::find_by_executable(path).await ?.len();
 }
 
-pub task resolve_executable(program: string) -> process::ResolvedExecutable {
-    return process::resolve_or_throw(program). await;
+pub task resolve_executable(program: string) -> process::ResolvedExecutable | Error {
+    return process::resolve(program).await ?;
 }
 
-pub task git(path: string, args: string[]) -> process::ProcessResult {
-    return run_command("git", args, path, 120000). await;
+pub task git(path: string, args: string[]) -> process::ProcessResult | Error {
+    return run_command("git", args, path, 120000).await ?;
 }
 
-pub fn require_command(label: string, result: process::ProcessResult) -> string {
+pub fn require_command(label: string, result: process::ProcessResult) -> string | Error {
     if !process_succeeded(result) {
-        throw(label + " failed with exit code " + string(process_exit_code(result)) + "\n" + result.stderr.trim());
+        return Error::make("example_failure", label + " failed with exit code " + string(process_exit_code(result)) + "\n" + result.stderr.trim(), ErrorOrigin.user, false);
     }
     if result.stdout_truncated || result.stderr_truncated {
-        throw(label + " exceeded the configured output limit");
+        return Error::make("example_failure", label + " exceeded the configured output limit", ErrorOrigin.user, false);
     }
     return result.stdout.trim();
 }
@@ -187,13 +186,13 @@ pub fn event_field(key: string, value: string) -> string {
     return key + "=" + event_escape(value);
 }
 
-pub task append_line(report: string, line: string) {
-    fs::append_or_throw(report, line + "\n"). await;
+pub task append_line(report: string, line: string) -> none | Error {
+    fs::append(report, line + "\n").await ?;
 }
 
-pub task append_event(report: string, sequence: int, run_id: string, phase: string, kind: string, effect: string, code: string, detail: string) {
+pub task append_event(report: string, sequence: int, run_id: string, phase: string, kind: string, effect: string, code: string, detail: string) -> none | Error {
     let line = "DHE-EVENT|schema=1|seq=" + string(sequence) + "|run=" + event_escape(run_id) + "|at=" + event_escape(system::utc_now()) + "|phase=" + event_escape(phase) + "|kind=" + event_escape(kind) + "|effect=" + event_escape(effect) + "|code=" + event_escape(code) + "|detail=" + event_escape(detail);
-    append_line(report, line). await;
+    append_line(report, line).await ?;
 }
 
 pub fn fatal_patterns() -> string[] {
@@ -221,18 +220,18 @@ fn count_pattern_lines(text: string, patterns: string[], hits: string[]) -> int 
     return count;
 }
 
-pub task scan_log(path: string, before_fingerprint: string, success_marker: string, patterns: string[]) -> LogCheck {
-    if !(fs::exists_or_throw(path). await) {
-        throw(errors::make("filesystem", "Player.log is missing: " + path, errors::ErrorOrigin.host, false));
+pub task scan_log(path: string, before_fingerprint: string, success_marker: string, patterns: string[]) -> LogCheck | Error {
+    if !(fs::exists(path).await ?) {
+        return Error::make("filesystem", "Player.log is missing: " + path, ErrorOrigin. host, false);
     }
-    let metadata = fs::metadata_or_throw(path). await;
+    let metadata = fs::metadata(path).await ?;
     let fingerprint = metadata.modified_unix_ms + ":" + metadata.size;
-    let tail = fs::read_tail_or_throw(path, 16777216). await;
+    let tail = fs::read_tail(path, 16777216).await ?;
     let hits: string[] = [];
     let fatal_count = count_pattern_lines(tail.text, patterns, hits);
     let dhe_load_count = count_pattern_lines(tail.text, ["load dhe assembly"], []);
     let success_count = if success_marker == "" { 0 } else { count_pattern_lines(tail.text, [success_marker], []) };
-    let hash = crypto::sha256_file(path). await;
+    let hash = crypto::sha256_file(path).await;
     return LogCheck {
         path: path,
         sha256: hash.sha256,
@@ -247,44 +246,44 @@ pub task scan_log(path: string, before_fingerprint: string, success_marker: stri
     };
 }
 
-pub task copy_log(source: string, destination: string, before_fingerprint: string) -> LogCheck {
-    if !(fs::exists_or_throw(source). await) {
-        throw(errors::make("filesystem", "Player.log is missing: " + source, errors::ErrorOrigin.host, false));
+pub task copy_log(source: string, destination: string, before_fingerprint: string) -> LogCheck | Error {
+    if !(fs::exists(source).await ?) {
+        return Error::make("filesystem", "Player.log is missing: " + source, ErrorOrigin. host, false);
     }
-    let copied = fs::copy_or_throw(source, destination, true). await;
+    let copied = fs::copy(source, destination, true).await ?;
     if copied == "" {
-        throw(errors::make("runtime", "Player.log copy returned no byte count", errors::ErrorOrigin.user, false));
+        return Error::make("runtime", "Player.log copy returned no byte count", ErrorOrigin.user, false);
     }
-    return scan_log(destination, before_fingerprint, "", fatal_patterns()). await;
+    return scan_log(destination, before_fingerprint, "", fatal_patterns()).await ?;
 }
 
-pub task canonical_existing(path: string, label: string) -> string {
-    if !(fs::exists_or_throw(path). await) {
-        throw(label + " does not exist: " + path);
+pub task canonical_existing(path: string, label: string) -> string | Error {
+    if !(fs::exists(path).await ?) {
+        return Error::make("example_failure", label + " does not exist: " + path, ErrorOrigin.user, false);
     }
-    return fs::canonicalize_or_throw(path). await;
+    return fs::canonicalize(path).await ?;
 }
 
-pub task require_inside(root: string, path: string, label: string) -> string {
-    let canonical_root = canonical_existing(root, "root"). await;
-    let canonical_path = canonical_existing(path, label). await;
+pub task require_inside(root: string, path: string, label: string) -> string | Error {
+    let canonical_root = canonical_existing(root, "root").await ?;
+    let canonical_path = canonical_existing(path, label).await ?;
     let normalized_root = canonical_root.replace("\\", "/");
     let normalized_path = canonical_path.replace("\\", "/");
     let prefix = if normalized_root.ends_with("/") { normalized_root } else { normalized_root + "/" };
     if normalized_path != normalized_root && !normalized_path.starts_with(prefix) {
-        throw(label + " is outside root: " + canonical_path);
+        return Error::make("example_failure", label + " is outside root: " + canonical_path, ErrorOrigin.user, false);
     }
     return canonical_path;
 }
 
-pub task source_state(role: string, path: string) -> SourceState {
-    if !(fs::exists_or_throw(path). await) {
+pub task source_state(role: string, path: string) -> SourceState | Error {
+    if !(fs::exists(path).await ?) {
         return SourceState { role: role, path: path, head: "missing", upstream: "missing", branch: "missing", clean: false, plugin_revision: "", libil2cpp_revision: "" };
     }
-    let head_result = git(path, ["rev-parse", "HEAD"]). await;
-    let upstream_result = git(path, ["rev-parse", "@{{upstream}}"]). await;
-    let branch_result = git(path, ["branch", "--show-current"]). await;
-    let status_result = git(path, ["status", "--porcelain=v1", "--untracked-files=all"]). await;
+    let head_result = git(path, ["rev-parse", "HEAD"]).await ?;
+    let upstream_result = git(path, ["rev-parse", "@{{upstream}}"]).await ?;
+    let branch_result = git(path, ["branch", "--show-current"]).await ?;
+    let status_result = git(path, ["status", "--porcelain=v1", "--untracked-files=all"]).await ?;
     let head = if process_succeeded(head_result) { head_result.stdout.trim() } else { "git-error" };
     let upstream = if process_succeeded(upstream_result) { upstream_result.stdout.trim() } else { "git-error" };
     let branch = if process_succeeded(branch_result) { branch_result.stdout.trim() } else { "git-error" };
@@ -296,19 +295,19 @@ pub fn source_ready(state: SourceState) -> bool {
     return state.clean && state.head != "missing" && state.head != "git-error" && state.head != "" && state.head == state.upstream;
 }
 
-pub task read_revision(package_root: string) -> string {
+pub task read_revision(package_root: string) -> string | Error {
     let path = join_path(package_root, "Packages/com.funplus.hybridclr/Data~/revision.txt");
-    if !(fs::exists_or_throw(path). await) {
+    if !(fs::exists(path).await ?) {
         return "missing";
     }
-    return fs::read_or_throw(path). await.trim();
+    return fs::read(path).await ?.trim();
 }
 
-pub task start_report(root: string, run_id: string) -> string {
-    fs::create_dir_all_or_throw(root). await;
+pub task start_report(root: string, run_id: string) -> string | Error {
+    fs::create_dir_all(root).await ?;
     let report = join_path(root, "dhe-evidence.md");
-    if !(fs::exists_or_throw(report). await) {
-        fs::write_or_throw(report, "# DHE Evidence\n\nSchema: 1\nRun: " + run_id + "\nCollected: " + system::utc_now() + "\n"). await;
+    if !(fs::exists(report).await ?) {
+        fs::write(report, "# DHE Evidence\n\nSchema: 1\nRun: " + run_id + "\nCollected: " + system::utc_now() + "\n").await ?;
     }
     return report;
 }

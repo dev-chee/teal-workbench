@@ -4,11 +4,11 @@
 //! `add`、`write`、`refresh` 和显式知识审核重试可能写盘；工作区层只在用户层记录该工作区为
 //! trusted 时装配。草稿状态与知识索引分开保存。
 
+use sha2::{Digest, Sha256};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use sha2::{Digest, Sha256};
 
 use teal_knowledge::{
     ExportFormat, KnowledgeCatalog, KnowledgeScope, KnowledgeStore, LayerIndex, LayerOptions,
@@ -172,7 +172,7 @@ fn retry_review(id: &str) -> Result<(), String> {
         .store(KnowledgeScope::Project)?
         .ok_or_else(|| "workspace knowledge layer is unavailable".to_owned())?
         .with_audit_context(teal_security::process_context());
-    let effective = teal_config::load_declarations(Some(&context.workspace))
+    let effective = teal_security::load_declarations(Some(&context.workspace))
         .map_err(|error| error.to_string())?;
     let permissions = KnowledgeCliPermissions {
         policy: teal_agent::WorkspacePermissionPolicy::new(effective.paths().clone()),
@@ -185,7 +185,7 @@ fn retry_review(id: &str) -> Result<(), String> {
         &proposals,
         id,
         &context.workspace,
-        &context.config.workspace_layer_root(&context.workspace),
+        &context.config.workspace_scope_root(&context.workspace),
         Some(&layers),
         &permissions,
         teal_workbench_automation::KnowledgePublicationWriter::Headless(&store),
@@ -218,7 +218,7 @@ pub(crate) async fn process_pending_reviews() -> Result<(), String> {
         .ok_or_else(|| "workspace knowledge layer is unavailable".to_owned())?
         .with_audit_context(teal_security::process_context());
     let layers = layered(false)?;
-    let effective = teal_config::load_declarations(Some(&context.workspace))
+    let effective = teal_security::load_declarations(Some(&context.workspace))
         .map_err(|error| error.to_string())?;
     let permissions = KnowledgeCliPermissions {
         policy: teal_agent::WorkspacePermissionPolicy::new(effective.paths().clone()),
@@ -241,7 +241,7 @@ pub(crate) async fn process_pending_reviews() -> Result<(), String> {
             &proposals,
             &proposal.id,
             &context.workspace,
-            &context.config.workspace_layer_root(&context.workspace),
+            &context.config.workspace_scope_root(&context.workspace),
             Some(&layers),
             &permissions,
             teal_workbench_automation::KnowledgePublicationWriter::Headless(&store),
@@ -302,7 +302,7 @@ pub(crate) fn layered(write_cache: bool) -> Result<LayeredKnowledge, String> {
         .enabled()
         .then(|| {
             KnowledgeStore::open(
-                context.config.user_layer_root(&context.teal_home),
+                context.config.user_scope_root(&context.teal_home),
                 KnowledgeScope::User,
                 options,
             )
@@ -313,7 +313,7 @@ pub(crate) fn layered(write_cache: bool) -> Result<LayeredKnowledge, String> {
     let project = (context.enabled() && context.trusted)
         .then(|| {
             KnowledgeStore::open(
-                context.config.workspace_layer_root(&context.workspace),
+                context.config.workspace_scope_root(&context.workspace),
                 KnowledgeScope::Project,
                 options,
             )
@@ -409,12 +409,12 @@ fn export(
         Some(path) => path.to_path_buf(),
         None => context
             .config
-            .workspace_layer_root(&context.workspace)
+            .workspace_scope_root(&context.workspace)
             .join("export"),
     };
     let roots = vec![
-        context.config.user_layer_root(&context.teal_home),
-        context.config.workspace_layer_root(&context.workspace),
+        context.config.user_scope_root(&context.teal_home),
+        context.config.workspace_scope_root(&context.workspace),
     ];
     let target = teal_knowledge::ExportTarget::resolve(&directory, &roots).map_err(error_text)?;
     let report = teal_knowledge::export(&target, &records, format, force).map_err(error_text)?;
@@ -546,7 +546,7 @@ fn error_text(error: teal_knowledge::KnowledgeError) -> String {
 
 /// 一次知识命令共用的配置上下文。
 struct Context {
-    config: teal_config::KnowledgeConfig,
+    config: teal_security::KnowledgeConfig,
     teal_home: PathBuf,
     workspace: PathBuf,
     trusted: bool,
@@ -557,12 +557,17 @@ impl Context {
     fn load() -> Result<Self, String> {
         let current = std::env::current_dir().map_err(|error| error.to_string())?;
         let effective =
-            teal_config::load_declarations(Some(&current)).map_err(|error| error.to_string())?;
+            teal_security::load_declarations(Some(&current)).map_err(|error| error.to_string())?;
+        let resolved = effective
+            .category::<teal_security::TealConfig>()
+            .map_err(|error| error.to_string())?;
+        let permissions =
+            teal_security::workspace_permissions(effective.paths(), resolved.document());
         Ok(Self {
-            config: effective.knowledge().clone(),
+            config: resolved.document().knowledge.clone(),
             teal_home: effective.paths().teal_home.clone(),
             workspace: effective.paths().workspace.clone().unwrap_or(current),
-            trusted: effective.workspace_trusted(),
+            trusted: permissions.trust_level == teal_security::TrustLevel::Trusted,
         })
     }
 
@@ -589,9 +594,9 @@ impl Context {
     fn store(&self, scope: KnowledgeScope) -> Result<Option<KnowledgeStore>, String> {
         let root = match scope {
             KnowledgeScope::Official => return Ok(None),
-            KnowledgeScope::User if self.enabled() => self.config.user_layer_root(&self.teal_home),
+            KnowledgeScope::User if self.enabled() => self.config.user_scope_root(&self.teal_home),
             KnowledgeScope::Project if self.enabled() && self.trusted => {
-                self.config.workspace_layer_root(&self.workspace)
+                self.config.workspace_scope_root(&self.workspace)
             }
             _ => return Ok(None),
         };

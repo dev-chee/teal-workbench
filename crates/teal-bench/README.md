@@ -24,11 +24,11 @@ Teal 的 Windows 优先模态终端工作台库，负责终端生命周期、应
 teal-bench：事件循环、生命周期与装配
  ├─ 内部终端 UI ──────────── teal-workbench-core (syntax feature)
  ├─ teal-workbench-services::agent_algorithms ─── teal-agent, teal-runtime
- ├─ teal-workbench-services ─ teal-workbench-core, teal-agent, teal-web
+ ├─ teal-workbench-services ─ teal-workbench-core, teal-agent, teal_host::web
  ├─ teal-lsp-client
  ├─ teal-workbench-automation ─ teal-workbench-core (syntax feature), teal-runtime
  ├─ teal-agent
- └─ teal-web
+ └─ teal_host::web
 ```
 
 `teal-workbench-core` 拥有缓冲区、文档、选择、事务、撤销、布局、命令、消息、窗口和恢复领域模型，不依赖终端、协议、网络或模型供应商，可由未来 GUI 复用。布局以 `SplitAxis`、`Length` 和 `PanelSize` 表达槽位长度与上下限，`LayoutSpec`/`NodeSpec` 供模板一次性构造布局树；焦点导航、分隔条命中和几何分配共用同一棵树，公开的 `split_rectangles` 让组合 Widget 复用同一套长度语义与铺满规则。
@@ -76,7 +76,7 @@ Agent 提出的文本修改先构造成 `teal-workbench-core::ChangeSet`。该�
 
 内置文法覆盖 Rust、Teal、Markdown、JSON、TOML、C、C++、Python、JavaScript、TypeScript 和 Go。Teal 文法脚本只获得 `syntax.register`；普通工作区自动化的其他能力需要独立批准。解析表缓存绑定文法哈希与 `ENGINE_ABI`。
 
-`teal-lsp-client` 是通用 stdio 客户端，负责 framing、文档同步、基于 `teal-text` 的坐标适配和 workspace edit 解析。它只公开中立文本编辑；根应用负责请求触发、修订选择器、授权和转换后的事务提交。Teal server 优先使用同一构建/分发目录中的 `teal-lsp`，再查 PATH。
+`teal-lsp-client` 是通用 stdio 客户端，负责 framing、文档同步、基于 `teal_utils::text` 的坐标适配和 workspace edit 解析。它只公开中立文本编辑；根应用负责请求触发、修订选择器、授权和转换后的事务提交。Teal server 优先使用同一构建/分发目录中的 `teal-lsp`，再查 PATH。
 
 工作台保存源码 Agent 的活动输入通道和事件显示位置；后台事件携带 run、任务和代次身份。工作区、浏览器、桌面和 Teal 工具链继续共享同一授权与 Host 桥接，其中平台注册按独立模块维护。
 
@@ -94,7 +94,7 @@ LSP CodeAction 同时包含工作区编辑与服务器命令时，确认后把�
 
 Task 交付引用本轮真实 ToolResult。`agents/delivery.tl` 要求格式、编译、测试和授权运行按序成功，具有相同脚本路径、配置档与程序摘要；验收及 `:evidence` 后续查询重新核对入口、导入闭包和产物文件。Chat 上下文只能经 `AgentContextProjection` 生成、展示和确认；投影排除工具参数、原始结果和私有状态，也不携带权限。Ready 可显式续接，InFlight 或未知结果阻断且不重放。
 
-`teal-web` 只支持 HTTP/HTTPS GET/HEAD，把 HTML 转为结构化文本；3xx Location 仅返回规范化 HTTP/HTTPS 目标，调用方须对新 URL 另行授权并请求，当前调用不自动跟随也不写入浏览历史。它不执行 JavaScript，不实现 CSS 布局、表单、Cookie、上传、媒体或嵌入式 WebView。响应默认限制 5 MiB；每个面板有独立请求代次和历史。会话只保存有界离线页面，恢复不发起网络请求，显式刷新才重新加载。
+`teal_host::web` 只支持 HTTP/HTTPS GET/HEAD，把 HTML 转为结构化文本；3xx Location 仅返回规范化 HTTP/HTTPS 目标，调用方须对新 URL 另行授权并请求，当前调用不自动跟随也不写入浏览历史。它不执行 JavaScript，不实现 CSS 布局、表单、Cookie、上传、媒体或嵌入式 WebView。响应默认限制 5 MiB；每个面板有独立请求代次和历史。会话只保存有界离线页面，恢复不发起网络请求，显式刷新才重新加载。
 
 工作台会话只保存窗口、面板、布局和浏览历史；Agent 历史、交互与 VM 检查点只保存在 RuntimeStore，Agent 面板从源码 run 的有界事件重建。旧会话版本和非空 Agent 历史拒绝恢复。
 
@@ -125,5 +125,5 @@ Bench 的源码 Agent 适配只处理程序选择、输入、UI 事件和展示�
 - `WindowKind::Tests` 与 Tests 窗口由根应用装配：`TestsWidget` 只保存一次运行的显示投影（按源码分组的 `TestRow`、选中行、过滤器与摘要），跳转与单测重跑以 `AppCommand::Command` 交回命令行（`test-jump`、`test-rerun`），组件本身不编译、不执行也不读写工作区。`:test` 在阻塞线程上编译并运行 `run_program_tests`，结果经 `RuntimeEvent::TestsFinished` 回到事件循环后写入列表与输出面板；窗口只保留显示状态，编译程序与 VM 实例不进入会话。
 - Bench 只使用 `teal-workbench-services::agent_algorithms` 的 `ThreeWayMerge`、工作区/Git 基线和 `ConnectivityMode` 等通用算法；新分支、计划和持续目标使用同一 RuntimeStore run 与 Teal 字段。
 - `teal-workbench-automation` 中仅有 capability 的脚本可使用 `execute`；注册了动态路径、网络或应用资源的宿主应使用 `execute_with_grant` 或对应事件入口，把调用方拥有的资源范围与脚本的精确 capability 一起交给运行时。脚本分类由嵌入应用提供：用户配置只自动信任入口规范目录内的用户源码，目录外导入按编译时冻结的实际身份及完整闭包取得精确批准；工作区自动化与内置文法使用各自的信任策略。`extension` 模块提供本地清单、编译快照、独立实例事务与工作台 Teal SDK，后台任务复用 runtime 持久执行门面而不建立第二套副作用账本。
-- `teal-web` 只支持 HTTP/HTTPS GET/HEAD，不执行 JavaScript、不保存 Cookie，也不实现 CSS 布局、表单、认证、上传、媒体或 WebView，成功解码后才提交历史变化。`teal-browser` 在导航前为页面启用 CDP Fetch 拦截，并递归附加暂停中的相关 popup、独立 iframe 与 worker target，先为子会话启用 Fetch 再运行；按会话内精确 URL 许可逐请求核对导航、重定向及子资源。未获准请求失败关闭并报告目标，独立批准 `browser.allow_network` 后须重新打开页面；拦截连接丢失则终止受管浏览器进程。每个放行请求审计交给 Chromium 的动作，不在账本保存 URL。`BrowserManager::screenshot` 对当前受管页面视口执行 PNG 截图，要求最新可访问性快照的 generation 并在捕获前后复查页面状态，结果最多 8 MiB，工作台通过 `HostToolImage` 元数据把图片接入 Agent。`teal-computer` 在 Windows 上优先使用 UI Automation 的 Invoke 与 Value pattern，同一窗口快照和动作串行，输入前消费代次；输入开始后的失败报告效果未知。密码元素和过期 generation 失败关闭，其他平台明确返回不可用而不伪装为空窗口集合或成功操作。
+- `teal_host::web` 只支持 HTTP/HTTPS GET/HEAD，不执行 JavaScript、不保存 Cookie，也不实现 CSS 布局、表单、认证、上传、媒体或 WebView，成功解码后才提交历史变化。`teal_host::browser` 在导航前为页面启用 CDP Fetch 拦截，并递归附加暂停中的相关 popup、独立 iframe 与 worker target，先为子会话启用 Fetch 再运行；按会话内精确 URL 许可逐请求核对导航、重定向及子资源。未获准请求失败关闭并报告目标，独立批准 `browser.allow_network` 后须重新打开页面；拦截连接丢失则终止受管浏览器进程。每个放行请求审计交给 Chromium 的动作，不在账本保存 URL。`BrowserManager::screenshot` 对当前受管页面视口执行 PNG 截图，要求最新可访问性快照的 generation 并在捕获前后复查页面状态，结果最多 8 MiB，工作台通过 `HostToolImage` 元数据把图片接入 Agent。`teal_host::computer` 在 Windows 上优先使用 UI Automation 的 Invoke 与 Value pattern，同一窗口快照和动作串行，输入前消费代次；输入开始后的失败报告效果未知。密码元素和过期 generation 失败关闭，其他平台明确返回不可用而不伪装为空窗口集合或成功操作。
 - `teal-workbench-core` 不依赖终端、网络、文件服务、LSP 传输或模型供应商；调用方必须先把外部字节/UTF-16 坐标转换为 Unicode 字符位置，并通过 `Transaction` 提交打开文档修改。

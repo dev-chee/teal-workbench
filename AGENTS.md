@@ -1,16 +1,16 @@
 # AGENTS
 
-本仓库是拆出的 `teal-workbench` 工作台仓库。产品入口与总体说明见 [README](README.md)；编辑器、工作区、协议和应用服务的实现细节以对应 package 的 `README.md` 为准。语言与嵌入能力属于 `teal-lang`，不在本仓库复制实现。
+本仓库是拆出的 `teal-workbench` 工作台仓库。产品入口与总体说明见 [README](README.md)；编辑器、工作区、LSP 客户端和应用服务的实现细节以对应 package 的 `README.md` 为准。语言与嵌入能力属于 `teal-lang`，不在本仓库复制实现。
 
 ## 架构边界
 
 - 根包 `teal` 只做命令解析、进程 I/O 和产品 bin 分发；入口应派发到 sibling binary，工作台库不得反向承担根 CLI 的全部解析职责。
-- `teal-workbench-core` 提供编辑器领域模型、文档、事务、窗口和可选 syntax 模块；`teal-text` 只提供协议共用的文本快照与坐标转换，不依赖编译器、LSP JSON 或编辑事务。
+- `teal-workbench-core` 提供编辑器领域模型、文档、事务、窗口和可选 syntax 模块；语言仓库的 `teal_utils::text` 提供协议共用的文本快照与坐标转换，不依赖编译器、LSP JSON 或编辑事务。
 - `teal-workbench-services` 提供文件树、搜索、进程、剪贴板、runtime lock、工具和工作区服务；其中 `agent_algorithms` 只做无界面 Flow 状态与交付证据验证，不启动模型、不登录、不批准、不提交编辑。
 - `teal-workbench-automation` 承载 Teal 自动化、typed Host、能力与信任边界；模型、Agent 上下文、权限、审计和持久运行时属于 `teal-lang` 的运行时能力，工作台只做适配。
-- `teal-bench` 是唯一直接绑定 Ratatui/Crossterm 的终端 UI。`teal-browser`、`teal-computer`、`teal-web` 分别保持浏览器、桌面可访问性和网页会话边界；编辑修改必须经过共享工作区事务，外部工具受工作区与批准边界约束。
-- `teal-lsp`、`teal-dap` 和 `teal-lsp-client` 遵循 `teal-lang` 编译器语义；语言或诊断变化时必须检查协议映射、源码位置和调试会话，不在工作台复制语言规则。
-- `teal-workspace`、`teal-fmt`、`tools/teal-xtask` 和 `runtime/packages/{agents,bench,feishu,git,http,oauth}` 分别负责工作区文件、仅改变空白的格式化、仓库维护命令和工作台扩展包。`runtime/packages/std` 及其 builtin 制品属于 `teal-lang`。
+- `teal-bench` 是唯一直接绑定 Ratatui/Crossterm 的终端 UI。语言仓库的 `teal_host::{browser,computer,web}` 分别保持浏览器、桌面可访问性和网页会话边界，工作台只装配后端、权限和呈现；编辑修改必须经过共享工作区事务，外部工具受工作区与批准边界约束。
+- `teal-lsp-client` 留在工作台，LSP/DAP 协议服务与独立二进制属于语言根包；它们共享 `teal-lang` 编译器语义；语言或诊断变化时必须检查协议映射、源码位置和调试会话，不在工作台复制语言规则。
+- `teal-workspace`、`tools/teal-xtask` 和 `runtime/packages/{agents,bench,feishu,git,http,oauth}` 分别负责工作区文件、仓库维护命令和工作台扩展包。格式化直接消费 Compiler，`teal-fmt/lsp/dap` 从同 revision 的语言产物分发，不覆盖工作台 `teal`；`runtime/packages/std` 及其 builtin 制品属于 `teal-lang`。
 - 依赖方向只能是工作台使用 `teal-lang`；跨仓库不得使用 `path` 依赖。拆仓提取期间 Cargo 中若出现 `git = "file:///D:/teal-lang"`，也必须保持版本约束和可替换为发布版/固定 tag 的边界。不得把 `teal-lang` 的源码复制进本仓库。
 
 ## 变更、文档与回归

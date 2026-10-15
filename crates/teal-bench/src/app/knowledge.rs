@@ -1,7 +1,7 @@
 //! 工作台本地知识层的刷新、缓存写回与状态展示。
 
-use std::{path::PathBuf, sync::Arc};
 use sha2::{Digest, Sha256};
+use std::{path::PathBuf, sync::Arc};
 
 use teal_knowledge::KnowledgeScope;
 
@@ -11,9 +11,13 @@ impl App {
     pub(crate) fn proposal_store(
         &self,
     ) -> Result<(Arc<teal_knowledge::KnowledgeProposalStore>, String, PathBuf), String> {
-        let config = teal_config::load_declarations(Some(&self.workspace))
+        let config = teal_security::load_declarations(Some(&self.workspace))
             .map_err(|error| error.to_string())?;
-        if !config.workspace_trusted() || !config.knowledge().enabled {
+        if !crate::config::trusted(&config).map_err(|error| error.to_string())?
+            || !crate::config::knowledge(&config)
+                .map_err(|error| error.to_string())?
+                .enabled
+        {
             return Err("workspace knowledge proposals require a trusted workspace".into());
         }
         let workspace = self
@@ -35,7 +39,9 @@ impl App {
         Ok((
             Arc::new(store),
             identity,
-            config.knowledge().workspace_layer_root(&workspace),
+            crate::config::knowledge(&config)
+                .map_err(|error| error.to_string())?
+                .workspace_scope_root(&workspace),
         ))
     }
 
@@ -50,8 +56,10 @@ impl App {
         scope: Option<KnowledgeScope>,
         write_cache: bool,
     ) -> Result<Vec<teal_workbench_services::KnowledgeLayerStatus>, String> {
-        let config = match teal_config::load_declarations(Some(&self.workspace)) {
-            Ok(config) => config.knowledge().clone(),
+        let config = match teal_security::load_declarations(Some(&self.workspace))
+            .and_then(|config| crate::config::knowledge(&config))
+        {
+            Ok(config) => config,
             Err(error) => return Err(error.to_string()),
         };
         if !config.enabled {
@@ -82,14 +90,16 @@ impl App {
     ///
     /// 刷新失败只记录告警，不回滚已经落地的编辑，也不写回派生缓存。
     pub(crate) fn refresh_workspace_knowledge_after_write(&mut self, paths: &[PathBuf]) {
-        let config = match teal_config::load_declarations(Some(&self.workspace)) {
-            Ok(config) => config.knowledge().clone(),
+        let config = match teal_security::load_declarations(Some(&self.workspace))
+            .and_then(|config| crate::config::knowledge(&config))
+        {
+            Ok(config) => config,
             Err(_) => return,
         };
         if !config.enabled {
             return;
         }
-        let root = config.workspace_layer_root(&self.workspace);
+        let root = config.workspace_scope_root(&self.workspace);
         let touched = paths.iter().any(|path| {
             let path = if path.is_absolute() {
                 path.clone()

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// 支持 LSP UTF-16 行坐标转换的 UTF-8 快照。
 #[derive(Clone, Debug)]
 pub struct LineIndex {
-    inner: teal_text::LineIndex,
+    inner: teal_utils::text::LineIndex,
 }
 
 impl LineIndex {
@@ -16,7 +16,7 @@ impl LineIndex {
     #[must_use]
     pub fn new(text: impl Into<String>) -> Self {
         Self {
-            inner: teal_text::LineIndex::new(text),
+            inner: teal_utils::text::LineIndex::new(text),
         }
     }
 

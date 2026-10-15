@@ -15,16 +15,23 @@ enum Action {
     archive = 20,
 }
 
-
 task main() {
     let direction = Direction.east;
     let result = "";
 
     match direction {
-        Direction.north => { result = "north"; }
-        Direction.south => { result = "south"; }
-        Direction.east => { result = "east"; }
-        Direction.west => { result = "west"; }
+        Direction.north => {
+            result = "north";
+        }
+        Direction.south => {
+            result = "south";
+        }
+        Direction.east => {
+            result = "east";
+        }
+        Direction.west => {
+            result = "west";
+        }
     }
 
     let reply = Action.reply {
@@ -36,12 +43,15 @@ task main() {
     let archive = Action.archive;
 
     match reply {
-        Action.reply { to, tone: style } => { print(to, style); }
-        _ => { print("not a reply"); }
+        Action.reply { to, tone: style } => {
+            print(to, style);
+        } _ => {
+            print("not a reply");
+        }
     }
 
     print(result);
     print(int(Direction.north), int(Direction.east), int(Direction.west));
-    print("archive tag=${archive}");
+    print("archive tag={archive}");
     print(typeof(reply), typeof(count), typeof(ratio), typeof(archive));
 }

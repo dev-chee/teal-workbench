@@ -9,7 +9,7 @@ use std::{
 
 use teal::{
     CompileOptions, ExecutionBindings, FsSourceLoader, HostExecutionGrant, HostRegistry,
-    NativeHostRuntime, RuntimeProfile, Source, prepare_execution,
+    NativeHostRuntime, RuntimeTier, Source, prepare_execution,
 };
 use teal_agent::{ActionContext, RunState, RuntimeServices, RuntimeStore, UserQuestion};
 use teal_model::{AuthProviderRegistry, ModelFactoryRegistry};
@@ -72,7 +72,7 @@ fn persistent_program() -> teal::CompiledProgram {
             "fn main() { entry_task(); } task entry_task() { print(\"done\"); }",
         ),
         &FsSourceLoader,
-        CompileOptions::default().with_runtime_profile(RuntimeProfile::agent()),
+        CompileOptions::default().with_tier(RuntimeTier::Agentic),
     )
     .expect("persistent extension task should compile")
 }
@@ -267,11 +267,13 @@ fn extension_sdk_executes_in_teal_vm_and_returns_only_pending_host_requests() {
         "entry.tl",
         r#"
 import "bench/extension.tl" as extension;
-fn main() {
-    extension::set("phase", "planning");
-    extension::start_bound("work", "draft plan", "[" + extension::quote("approved-plan") + "]");
-    extension::complete("plan ready");
+fn application() -> none | Error {
+    extension::set("phase", "planning")?;
+    extension::start_bound("work", "draft plan", "[" + extension::quote("approved-plan")? + "]")?;
+    extension::complete("plan ready")?;
 }
+
+fn main() -> int { let result = application(); match result { Error { .. } => { print(result.message); return 1; } _ => { return 0; } } }
 "#,
     );
     let package = package(
@@ -310,8 +312,8 @@ fn main() {
     let executing = WorkbenchAutomationRuntime::for_extension(registry)
         .with_audit_context(teal_security::AuditContext::new(Arc::new(TestAuditSink)));
     let grant = Arc::new(
-        HostExecutionGrant::core_only("test/extension-sdk/v1")
-            .allow_capabilities(package.operations.iter().cloned()),
+        HostExecutionGrant::deny_all("test/extension-sdk/v1")
+            .allow_permissions(package.operations.iter().cloned()),
     );
 
     let exit = executing
@@ -345,7 +347,7 @@ fn prepared_execution_reuses_the_stable_key_and_rejects_changed_context() {
 
     let first = prepare_execution(
         &program,
-        &store,
+        Arc::clone(&store),
         "extension-1:event-1:0",
         &context_digest('a'),
         bindings.clone(),
@@ -353,7 +355,7 @@ fn prepared_execution_reuses_the_stable_key_and_rejects_changed_context() {
     .expect("first execution preparation");
     let second = prepare_execution(
         &program,
-        &store,
+        Arc::clone(&store),
         "extension-1:event-1:0",
         &context_digest('a'),
         bindings,
@@ -369,7 +371,7 @@ fn prepared_execution_reuses_the_stable_key_and_rejects_changed_context() {
 
     let error = match prepare_execution(
         &program,
-        &store,
+        Arc::clone(&store),
         "extension-1:event-1:0",
         &context_digest('b'),
         ExecutionBindings::default(),
@@ -392,23 +394,22 @@ fn terminal_prepared_execution_cannot_be_started_again() {
     let program = persistent_program();
     let prepared = prepare_execution(
         &program,
-        store.as_ref(),
+        Arc::clone(&store),
         "extension-1:event-2:0",
         &context_digest('c'),
         ExecutionBindings::default(),
     )
     .expect("execution preparation");
     store
+        .claim_run(&prepared.run_id)
+        .expect("test run claim")
         .set_run_state(&prepared.run_id, RunState::Completed)
         .expect("test run should become terminal");
     let run_id = prepared.run_id.clone();
 
-    let grant = Arc::new(HostExecutionGrant::core_only(
-        "test/persistent-extension/v1",
-    ));
+    let grant = Arc::new(HostExecutionGrant::deny_all("test/persistent-extension/v1"));
     let mut host = NativeHostRuntime::builder()
-        .trusted()
-        .trusted()
+        .audit_context(teal_security::process_context())
         .authorization(grant.clone())
         .build()
         .expect("test Host runtime should build");
@@ -445,7 +446,7 @@ fn failed_terminal_run_keeps_a_candidate_result_without_becoming_successful() {
     let store = Arc::new(RuntimeStore::open(temporary.path()).expect("runtime store"));
     let prepared = prepare_execution(
         &persistent_program(),
-        &store,
+        Arc::clone(&store),
         "extension-1:event-4:0",
         &context_digest('e'),
         ExecutionBindings::default(),

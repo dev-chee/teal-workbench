@@ -1,10 +1,10 @@
 //! 交付核验使用的当前工作区程序摘要。
 
+use sha2::{Digest, Sha256};
 use std::{
     io::Read,
     path::{Path, PathBuf},
 };
-use sha2::{Digest, Sha256};
 
 /// 将当前程序重新编译的请求限制在一个已确定的工作区内。
 pub struct WorkspaceProgramDigest {
@@ -157,7 +157,7 @@ mod tests {
         std::fs::write(&path, "task main() {}").unwrap();
         let provider = WorkspaceProgramDigest::new(root.path()).unwrap();
         let error = provider
-            .digest(path.to_string_lossy().into(), "native".into())
+            .digest(path.to_string_lossy().into(), "hosted".into())
             .await
             .unwrap_err();
         assert!(error.to_string().contains("outside the workspace"));
@@ -178,7 +178,7 @@ mod tests {
         .unwrap();
         let provider = WorkspaceProgramDigest::new(root.path()).unwrap();
         let original = provider
-            .digest("main.tl".into(), "native".into())
+            .digest("main.tl".into(), "hosted".into())
             .await
             .unwrap();
         std::fs::write(
@@ -187,7 +187,7 @@ mod tests {
         )
         .unwrap();
         let changed = provider
-            .digest("main.tl".into(), "native".into())
+            .digest("main.tl".into(), "hosted".into())
             .await
             .unwrap();
         assert_ne!(original, changed);

@@ -16,9 +16,9 @@ fn response(status: int, body: string) -> http::Response {
     };
 }
 
-task main() {
+task application() -> none | Error {
     // 缺少刷新授权时 refresh_token 为空，有效期取服务端返回的秒数。
-    let token = oauth::decode_or_throw(response(200, "{{\"access_token\":\"access\",\"token_type\":\"Bearer\",\"expires_in\":3600}}"));
+    let token = oauth::decode(response(200, "{{\"access_token\":\"access\",\"token_type\":\"Bearer\",\"expires_in\":3600}}")) ?;
     print(token.access_token, token.token_type, token.expires_in, token.refresh_token == "");
 
     let provider = oauth::Provider {
@@ -34,11 +34,26 @@ task main() {
 
     // 非 2xx 响应不携带秘密文本地失败。
     let rejected = false;
-    match oauth::decode(response(400, "{{\"error\":\"invalid_grant\"}}")) {
-        Result.ok { value } => { print(value.access_token); }
-        Result.err { error } => {
-            rejected = error.kind == "oauth_http" && error.retryable;
+    let decoded = oauth::decode(response(400, "{{\"error\":\"invalid_grant\"}}"));
+    match decoded {
+        Error { .. } => {
+            rejected = decoded.kind == "oauth_http" && decoded.retryable;
+        } _ => {
+            print(decoded.access_token);
         }
     }
     print(rejected);
+}
+
+/// 入口明确处理失败；未知外部效果仍由 VM 终止。
+task main() -> int {
+    let result = application().await;
+    match result {
+        Error { .. } => {
+            print(result.message);
+            return 1;
+        } _ => {
+            return 0;
+        }
+    }
 }

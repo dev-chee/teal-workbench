@@ -1,13 +1,13 @@
 # teal-workbench
 
-Teal 的编辑器与 Agent 工作台。仓库提供 Windows 优先的模态终端界面、共享编辑与工作区服务、Teal 自动化、语言协议工具，以及受控的浏览器和桌面交互能力。使用 `teal bench` 启动工作台，也可以在其他宿主中复用各个库。
+Teal 的编辑器与 Agent 工作台。仓库提供 Windows 优先的模态终端界面、共享编辑与工作区服务、Teal 自动化，以及对语言仓库协议工具、本机浏览器和桌面服务的集成。使用 `teal bench` 启动工作台，也可以在其他宿主中复用各个库。
 
 本仓库从 Teal 拆出，负责产品交互和应用集成；语言、编译器、VM、标准库以及模型、权限、审计和持久 Agent 运行时由 `teal-lang` 提供。工作台通过依赖使用这些能力，业务流程由 Teal 源码程序表达。
 
 ## 主要能力
 
 - **编辑与工作区**：共享缓冲区、多选择、事务编辑、分支撤销、文件树、搜索、窗口布局和会话恢复。
-- **语言工具**：语法高亮、通用 LSP 客户端、Teal LSP 服务器、DAP 调试适配器，以及只改变空白的源码格式化。
+- **语言工具**：语法高亮、通用 LSP 客户端，并消费语言仓库提供的 LSP、DAP 和源码格式化工具。
 - **源码 Agent**：工作台把用户输入、工具结果和打开文档状态交给持久 Teal 程序，呈现会话、问答、批准、运行状态和交付证据。
 - **自动化与扩展**：通过类型化 Host、能力声明和信任边界接入配置、文法、命令、面板与后台任务。
 - **外部交互**：结构化文本网页、受管 Chromium CDP 会话和 Windows UI Automation；外部动作使用独立授权与审计。
@@ -53,9 +53,9 @@ cargo build --locked --workspace --bins
 | `teal run` | `teal-run` | `teal-workbench-services`，需启用 `tools` feature |
 | `teal config` / `teal perm` | `teal-config` / `teal-perm` | `teal-bench` |
 | `teal knowledge` | `teal-knowledge` | `teal-workbench-automation` |
-| `teal fmt` | `teal-fmt` | `teal-fmt` |
-| `teal lsp` | `teal-lsp` | `teal-lsp` |
-| `teal dap` | `teal-dap` | `teal-dap` |
+| `teal fmt` | `teal-fmt` | 语言仓库根包 `teal-lang` |
+| `teal lsp` | `teal-lsp` | 语言仓库根包 `teal-lang` |
+| `teal dap` | `teal-dap` | 语言仓库根包 `teal-lang` |
 | `teal compile` / `teal test` | `teal-c` / `teal-test` | `teal-lang` 的 `teal-runtime` |
 | `teal auth` / `teal model` | `teal-auth` / `teal-model` | `teal-lang` 的 `teal-model` |
 | `teal audit` | `teal-audit` | `teal-lang` 的 `teal-security` |
@@ -71,16 +71,16 @@ cargo build --locked --workspace --bins
 | [`src`](src) | 根 `teal` 命令与独立工具派发。 |
 | [`teal-bench`](crates/teal-bench/README.md) | 终端生命周期、事件循环、窗口呈现、应用装配，以及配置和权限命令。 |
 | [`teal-workbench-core`](crates/teal-workbench-core/README.md) | 文档、选择、事务、撤销、布局、窗口、恢复和可选 `syntax` 模块。 |
-| [`teal-text`](crates/teal-text/README.md) | 不可变文本快照与 UTF-8 / UTF-16 坐标转换。 |
+| [teal_utils::text](https://github.com/dev-chee/teal-lang/blob/main/crates/teal-utils/README.md) | 不可变文本快照与 UTF-8 / UTF-16 坐标转换。 |
 | [`teal-workbench-services`](crates/teal-workbench-services/README.md) | 文件树、搜索、进程、剪贴板、runtime lock、工具、观测和工作区服务。 |
 | [`teal-workbench-automation`](crates/teal-workbench-automation/README.md) | Teal 自动化执行、类型化 Host、扩展装配、能力与信任边界。 |
 | [`teal-workspace`](crates/teal-workspace/README.md) | 版本化文件快照、修改提案与修改记录。 |
-| [`teal-lsp`](crates/teal-lsp/README.md)、[`teal-dap`](crates/teal-dap/README.md) | Teal 语言服务器和源码调试协议适配。 |
+| [teal_lang::lsp](https://github.com/dev-chee/teal-lang/blob/main/src/lsp/README.md)、[teal_lang::dap](https://github.com/dev-chee/teal-lang/blob/main/src/dap/README.md) | Teal 语言服务器和源码调试协议适配。 |
 | [`teal-lsp-client`](crates/teal-lsp-client/README.md) | 通用 stdio LSP 客户端、文档同步和协议编辑解析。 |
-| [`teal-fmt`](crates/teal-fmt/README.md) | 保留 token 拼写与顺序、仅调整空白的格式化库与命令。 |
-| [`teal-browser`](crates/teal-browser/README.md) | 受管 Chromium 进程、CDP 页面与交互会话。 |
-| [`teal-computer`](crates/teal-computer/README.md) | 桌面可访问性快照、语义操作和单独授权的原始输入。 |
-| [`teal-web`](crates/teal-web/README.md) | 无 JavaScript 的结构化文本网页客户端。 |
+| [teal_compiler::format_named](https://github.com/dev-chee/teal-lang/blob/main/crates/teal-compiler/README.md) | 保留 token 拼写与顺序、仅调整空白的格式化库与命令。 |
+| [teal_host::browser](https://github.com/dev-chee/teal-lang/blob/main/crates/teal-host/README.md) | 受管 Chromium 进程、CDP 页面与交互会话。 |
+| [teal_host::computer](https://github.com/dev-chee/teal-lang/blob/main/crates/teal-host/README.md) | 桌面可访问性快照、语义操作和单独授权的原始输入。 |
+| [teal_host::web](https://github.com/dev-chee/teal-lang/blob/main/crates/teal-host/README.md) | 无 JavaScript 的结构化文本网页客户端。 |
 | [`tools/teal-xtask`](tools/teal-xtask/README.md) | 工作台分发、文档、workspace 校验和显式门禁等仓库维护工具。 |
 | [`runtime`](runtime) | 源码 Agent、配置、模板、补全、安装脚本和工作台扩展包。 |
 | [`examples`](examples/README.md) | 语言与 Host 用法、Agent 示例、工作台扩展及组合场景。 |
@@ -90,7 +90,7 @@ cargo build --locked --workspace --bins
 
 ## 架构与修改边界
 
-依赖方向为工作台使用 `teal-lang`。`teal-bench` 是唯一直接绑定 Ratatui/Crossterm 的终端 UI；编辑器领域层、工作区服务和自动化层通过类型化接口供不同宿主复用。`teal-text` 保持为协议共用的中立文本层。
+依赖方向为工作台使用 `teal-lang`。`teal-bench` 是唯一直接绑定 Ratatui/Crossterm 的终端 UI；编辑器领域层、工作区服务和自动化层通过类型化接口供不同宿主复用。`teal_utils::text` 保持为协议共用的中立文本层。
 
 编辑器、LSP、Agent 工具和自动化对打开文档的修改都经过共享事务。文件操作还需核对工作区路径、文件身份和文档版本，并遵守批准、审计与恢复边界。工作区状态与 VM 状态分别管理，恢复程序不会自动撤销文件或外部命令的副作用。
 
@@ -108,3 +108,14 @@ cargo build --locked --workspace --bins
 ## 许可证
 
 [MIT](LICENSE)。
+
+## 本机服务与语言工具迁移
+
+浏览器、桌面和文本网页服务使用 `teal-host` 的独立可选 feature；工作台显式启用并注入审计。
+通用注册层传入 `std.bench.browser/computer/web`，Teal 包装仍由本仓库维护。句柄只能在当前
+后端实例中使用，旧持久运行不能把失效句柄当作恢复后的能力。
+
+源码与 Rust 调用方统一使用 RuntimeTier、Permission、Embedded 和 `T | Error`。
+运行锁升级为版本 9，catalog 为 6、package 为 7；旧格式拒绝并保留原文件，旧程序需重新编译。
+DAP launch 使用 `tier: embedded/hosted/agentic`，旧 `runtimeProfile` 拒绝。
+发行必须以同一固定 Git revision 构建语言工具，工作台自己的 `teal` 入口保持独立。

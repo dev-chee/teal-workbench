@@ -1,21 +1,21 @@
 //! 通用扩展装配与事件路由；业务流程全部由扩展源码定义。
+use super::{App, AppPanel, PendingConfirmation, PendingOverlay, RuntimeEvent};
+use crate::workbench::ui::ConfirmOverlay;
 use std::{
     collections::{BTreeMap, VecDeque},
     path::{Path, PathBuf},
     sync::Arc,
 };
-use teal_workbench_automation::{WorkbenchAutomationRuntime, TrustDecision};
 use teal_workbench_automation::extension::{
-    ExtensionCall, ExtensionCallOutput, ExtensionEvent, ExtensionInstance, WorkbenchPluginPackage,
-    ArtifactReceipt, sha256,
+    ArtifactReceipt, ExtensionCall, ExtensionCallOutput, ExtensionEvent, ExtensionInstance,
+    WorkbenchPluginPackage, sha256,
 };
-use teal_workbench_core::{SplitAxis, CommandSpec, PanelId, Severity};
-use crate::workbench::ui::ConfirmOverlay;
-use super::{App, AppPanel, PendingConfirmation, PendingOverlay, RuntimeEvent};
-#[path = "extensions/jobs.rs"]
-mod jobs;
+use teal_workbench_automation::{TrustDecision, WorkbenchAutomationRuntime};
+use teal_workbench_core::{CommandSpec, PanelId, Severity, SplitAxis};
 #[path = "extensions/hosts.rs"]
 mod hosts;
+#[path = "extensions/jobs.rs"]
+mod jobs;
 
 pub(crate) struct Loaded {
     pub(super) package: Arc<WorkbenchPluginPackage>,
@@ -852,8 +852,8 @@ fn grant(
         .canonicalize()
         .unwrap_or_else(|_| workspace.to_path_buf());
     let mut g =
-        teal::HostExecutionGrant::core_only(format!("bench-extension:{}", package.fingerprint))
-            .allow_capabilities(package.operations.iter().cloned());
+        teal::HostExecutionGrant::deny_all(format!("bench-extension:{}", package.fingerprint))
+            .allow_permissions(package.operations.iter().cloned());
     if model {
         g = g.allow_tools(
             package

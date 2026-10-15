@@ -21,7 +21,6 @@ pub(super) enum WorkspaceOperation {
     TealFmtCheck,
     TealTest,
     TealRun,
-    WebFetch,
     WorkspaceDiagnosticsJson,
 }
 
@@ -60,7 +59,6 @@ impl WorkspaceOperation {
         Self::TealFmtCheck,
         Self::TealTest,
         Self::TealRun,
-        Self::WebFetch,
         Self::WorkspaceDiagnosticsJson,
     ];
 
@@ -310,7 +308,7 @@ impl WorkspaceOperation {
                 description: "Check a workspace .tl file with the current Teal compiler",
                 parameters: &[
                     ("path", "Workspace Teal source path"),
-                    ("runtime_profile", "Teal runtime profile"),
+                    ("tier", "Teal runtime profile"),
                 ],
                 arguments: &[RuntimeType::String, RuntimeType::String],
                 return_type: RuntimeType::Map,
@@ -341,7 +339,7 @@ impl WorkspaceOperation {
                 description: "Run the `@test` functions registered in a workspace .tl file",
                 parameters: &[
                     ("path", "Workspace Teal source path"),
-                    ("runtime_profile", "Teal runtime profile"),
+                    ("tier", "Teal runtime profile"),
                     (
                         "filter",
                         "Optional test-name substring; empty runs every test",
@@ -366,7 +364,7 @@ impl WorkspaceOperation {
                 description: "Run a Teal script with the current distribution after user confirmation",
                 parameters: &[
                     ("path", "Workspace Teal source path"),
-                    ("runtime_profile", "Teal runtime profile"),
+                    ("tier", "Teal runtime profile"),
                     ("permission_file", "Workspace-relative v3 permission file"),
                 ],
                 arguments: &[
@@ -377,20 +375,6 @@ impl WorkspaceOperation {
                 return_type: RuntimeType::Map,
                 capability: "process.spawn",
                 effect: HostToolEffect::Mutating,
-                recovery: ExternalCallRecovery::Journaled,
-                checkpointed: false,
-                exported: true,
-            },
-            Self::WebFetch => OperationDefinition {
-                module: "std.bench.web",
-                function: "fetch",
-                name: "web.fetch",
-                description: "Get the structured text of an HTTP/HTTPS web page",
-                parameters: &[("url", "HTTP or HTTPS URL")],
-                arguments: &[RuntimeType::String],
-                return_type: RuntimeType::String,
-                capability: "network.http",
-                effect: HostToolEffect::ReadOnly,
                 recovery: ExternalCallRecovery::Journaled,
                 checkpointed: false,
                 exported: true,

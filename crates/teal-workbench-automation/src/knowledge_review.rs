@@ -1,14 +1,14 @@
 //! 独立 Teal 审核 Agent 的宿主驱动；模型结论不执行知识写入。
 
-use std::{path::Path, sync::Arc};
 use sha2::{Digest, Sha256};
+use std::{path::Path, sync::Arc};
 
+use teal::HostExecutionGrant as ExecutionGrant;
 use teal_agent::{
-    AgentRuntimeError, RootBudgetLimits, RuntimeServices, RuntimeStore, UserAnswer, UserQuestion,
-    ModelToolState, WorkspaceTransactionProvider, PermissionProvider, ActionContext, ActionSpec,
-    ActionResourceAccess, ResourceVersion, Decision,
+    ActionContext, ActionResourceAccess, ActionSpec, AgentRuntimeError, Decision, ModelToolState,
+    PermissionProvider, ResourceVersion, RootBudgetLimits, RuntimeServices, RuntimeStore,
+    UserAnswer, UserQuestion, WorkspaceTransactionProvider,
 };
-use teal_core::ExecutionGrant;
 use teal_knowledge::{
     KnowledgeProposal, KnowledgeProposalStore, KnowledgeStore, ProposalReview, ProposalStatus,
     PublicationReceipt,
@@ -83,7 +83,7 @@ pub async fn review_knowledge_proposal(
             include_str!("../../../runtime/agents/knowledge-review.tl"),
         ),
         &teal::FsSourceLoader,
-        teal::CompileOptions::default().with_runtime_profile(teal::RuntimeProfile::agent()),
+        teal::CompileOptions::default().with_tier(teal::RuntimeTier::Agentic),
     )
     .map_err(|error| KnowledgeReviewError::Invalid(error.to_string()))?;
     let store = Arc::new(
@@ -91,12 +91,27 @@ pub async fn review_knowledge_proposal(
             .map_err(|error| KnowledgeReviewError::Invalid(error.to_string()))?,
     );
     let context_digest = format!("{:x}", Sha256::digest(packet.as_bytes()));
+    let program = teal_agent::AgentProgram::from_shared_bytes(
+        compiled
+            .serialized_bytes()
+            .map_err(|error| KnowledgeReviewError::Invalid(error.to_string()))?,
+    )
+    .map_err(|error| KnowledgeReviewError::Invalid(error.to_string()))?;
+    let bindings = program
+        .resolve_model_bindings(
+            &teal::ExecutionBindings::default(),
+            &access
+                .configuration()
+                .map_err(|error| KnowledgeReviewError::Model(error.to_string()))?
+                .document,
+        )
+        .map_err(|error| KnowledgeReviewError::Model(error.to_string()))?;
     let prepared = teal::prepare_execution(
         &compiled,
-        store.as_ref(),
+        Arc::clone(&store),
         &format!("knowledge-review:{}", proposal.id),
         &context_digest,
-        teal::ExecutionBindings::default(),
+        bindings,
     )
     .map_err(|error| KnowledgeReviewError::Invalid(error.to_string()))?;
     let run_id = prepared.run_id.clone();
@@ -112,13 +127,10 @@ pub async fn review_knowledge_proposal(
             output_tokens: 1_024,
         })
         .map_err(|error| KnowledgeReviewError::Invalid(error.to_string()))?
-        .with_audit_context(audit);
-    let grant = Arc::new(ExecutionGrant::core_only("knowledge-review/v1"));
+        .with_audit_context(audit.clone());
+    let grant = Arc::new(ExecutionGrant::deny_all("knowledge-review/v1"));
     let mut host = teal::NativeHostRuntime::builder()
-        .trusted()
-        .trusted()
-        .trusted()
-        .trusted()
+        .audit_context(audit)
         .authorization(grant.clone())
         .console(false)
         .file_system(false)
@@ -219,13 +231,23 @@ pub fn build_knowledge_review_packet(
             "proposal source digest changed".into(),
         ));
     }
+    let evidence = teal_knowledge::ProposalEvidenceProvider::resolve(
+        store,
+        &proposal.workspace,
+        &proposal.source_run,
+        &proposal.source_refs,
+    )
+    .map_err(|error| KnowledgeReviewError::Invalid(error.to_string()))?;
+    if evidence != proposal.source_evidence {
+        return Err(KnowledgeReviewError::Invalid(
+            "proposal source evidence changed".into(),
+        ));
+    }
     let mut references = Vec::new();
     for reference in &proposal.source_refs {
         let operation = operations
             .iter()
-            .find(|operation| {
-                operation.call.id == *reference && operation.id != proposal_operation.id
-            })
+            .find(|operation| operation.id == *reference && operation.id != proposal_operation.id)
             .ok_or_else(|| {
                 KnowledgeReviewError::Invalid("proposal references an unknown tool call".into())
             })?;
@@ -358,24 +380,42 @@ pub async fn process_knowledge_proposal(
             proposal.title.trim(),
             proposal.body.trim_end()
         );
-        let Ok(bytes) = std::fs::read(&target) else {
-            return Ok(ProposalStatus::Unknown);
-        };
-        if bytes != expected.as_bytes() {
-            return Ok(ProposalStatus::Unknown);
-        }
         let receipt = PublicationReceipt {
             path: target
                 .strip_prefix(workspace)
                 .map_err(|_| "knowledge target escapes workspace".to_owned())?
                 .to_string_lossy()
                 .replace('\\', "/"),
-            sha256: format!("{:x}", Sha256::digest(&bytes)),
+            sha256: format!("{:x}", Sha256::digest(expected.as_bytes())),
         };
-        proposals
-            .reconcile_publication(id, receipt)
+        authorize_publication(&proposal, &target, permissions)
+            .await
             .map_err(|error| error.to_string())?;
-        return Ok(ProposalStatus::Published);
+        let verifier = VerifiedPublication {
+            workspace,
+            proposal: &proposal,
+            receipt: &receipt,
+            bytes: expected.len(),
+        };
+        if teal_knowledge::ProposalPublicationVerifier::verify(&verifier, &proposal, &receipt)
+            .is_err()
+        {
+            return Ok(ProposalStatus::Unknown);
+        }
+        proposals
+            .reconcile_publication_verified(id, receipt.clone(), &source, &verifier)
+            .map_err(|error| error.to_string())?;
+        let saved = proposals.get(id).map_err(|error| error.to_string())?;
+        return Ok(
+            if saved.is_some_and(|saved| {
+                saved.status == ProposalStatus::Published
+                    && saved.receipt.as_ref() == Some(&receipt)
+            }) {
+                ProposalStatus::Published
+            } else {
+                ProposalStatus::Unknown
+            },
+        );
     }
     if matches!(
         proposal.status,
@@ -644,41 +684,47 @@ pub async fn publish_approved_knowledge(
             "headless knowledge root changed".into(),
         ));
     }
-    let action = ActionSpec {
-        id: format!("knowledge-publish:{}", proposal.id),
-        tool: "workspace.write_file".into(),
-        arguments: serde_json::json!({"path": target}),
-        resources: vec![ResourceVersion {
-            access: ActionResourceAccess::Write,
-            resource: format!("file://{}", target.display()),
-            version: "absent".into(),
-        }],
-    };
-    let context = ActionContext {
-        run_id: format!("knowledge-review-{}", &proposal.id[..16]),
-        task_id: proposal.id.clone(),
-        generation: 1,
-        policy_version: permissions.version().to_owned(),
-    };
-    match permissions
-        .authorize(context, action)
-        .await
-        .map_err(|error| KnowledgePublicationError::Unknown(error.to_string()))?
-    {
-        Decision::Allow => {}
-        Decision::ApprovalRequired(_) => return Err(KnowledgePublicationError::ApprovalRequired),
-        Decision::Deny(reason) => return Err(KnowledgePublicationError::Stale(reason)),
+    let source = RuntimeStore::connect(&workspace)
+        .map_err(|error| KnowledgePublicationError::Stale(error.to_string()))?;
+    let evidence = teal_knowledge::ProposalEvidenceProvider::resolve(
+        &source,
+        &proposal.workspace,
+        &proposal.source_run,
+        &proposal.source_refs,
+    )
+    .map_err(|error| KnowledgePublicationError::Stale(error.to_string()))?;
+    if evidence != proposal.source_evidence {
+        return Err(KnowledgePublicationError::Stale(
+            "proposal source evidence changed".into(),
+        ));
     }
+    let verifier = VerifiedPublication {
+        workspace: &workspace,
+        proposal,
+        receipt: &receipt,
+        bytes: text.len(),
+    };
+    // 在等待批准之前固定写入证明；协调器在句柄锚定目录内执行无覆盖创建。
+    let coordinator = teal_workbench_core::WorkspaceMutationCoordinator::new(
+        workspace.clone(),
+        workspace.join(".teal/checkpoints"),
+    )
+    .map_err(KnowledgePublicationError::Stale)?
+    .with_audit_context(audit.clone());
+    let prepared_target = coordinator
+        .resolve_write(&target, true)
+        .map_err(KnowledgePublicationError::Stale)?;
+    authorize_publication(proposal, prepared_target.path(), permissions).await?;
+    prepared_target
+        .revalidate()
+        .map_err(KnowledgePublicationError::Stale)?;
     let existing = match std::fs::symlink_metadata(&target) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
             return Err(KnowledgePublicationError::Stale(
                 "publication target is a symbolic link".into(),
             ));
         }
-        Ok(_) => Some(
-            std::fs::read(&target)
-                .map_err(|error| KnowledgePublicationError::Unknown(error.to_string()))?,
-        ),
+        Ok(_) => Some(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => return Err(KnowledgePublicationError::Unknown(error.to_string())),
     };
@@ -693,14 +739,9 @@ pub async fn publish_approved_knowledge(
     let audit = audit
         .begin(event)
         .map_err(|error| KnowledgePublicationError::Unknown(error.to_string()))?;
-    let result = if let Some(existing) = existing {
-        if format!("{:x}", Sha256::digest(&existing)) == digest {
-            Ok(())
-        } else {
-            Err(KnowledgePublicationError::Stale(
-                "target file already exists with different content".into(),
-            ))
-        }
+    let result = if existing.is_some() {
+        teal_knowledge::ProposalPublicationVerifier::verify(&verifier, proposal, &receipt)
+            .map_err(|error| KnowledgePublicationError::Stale(error.to_string()))
     } else {
         match writer {
             KnowledgePublicationWriter::Workspace(transaction) => transaction
@@ -716,31 +757,25 @@ pub async fn publish_approved_knowledge(
                         ))
                     }
                 }),
-            KnowledgePublicationWriter::Headless(store) => store
-                .create_named(&slug, text.as_bytes())
-                .map(|_| ())
-                .map_err(|error| match error {
-                    teal_knowledge::KnowledgeError::Io(io)
-                        if io.kind() == std::io::ErrorKind::AlreadyExists =>
-                    {
-                        KnowledgePublicationError::Stale(
-                            "publication target was created concurrently".into(),
-                        )
-                    }
-                    other => KnowledgePublicationError::Unknown(other.to_string()),
-                }),
+            KnowledgePublicationWriter::Headless(_) => coordinator
+                .create_new_resolved(
+                    &teal_workbench_core::BufferStore::default(),
+                    prepared_target,
+                    &text,
+                )
+                .map_err(KnowledgePublicationError::Unknown),
         }
     };
     audit
-        .finish(if result.is_ok() {
-            teal_security::Outcome::Succeeded
-        } else {
-            teal_security::Outcome::Failed
+        .finish(match &result {
+            Ok(()) => teal_security::Outcome::Succeeded,
+            Err(KnowledgePublicationError::Unknown(_)) => teal_security::Outcome::Unknown,
+            Err(_) => teal_security::Outcome::Failed,
         })
         .map_err(|error| KnowledgePublicationError::Unknown(error.to_string()))?;
     result?;
     let recorded = proposals
-        .record_publication(&proposal.id, receipt.clone())
+        .record_publication_verified(&proposal.id, receipt.clone(), &source, &verifier)
         .map_err(|error| KnowledgePublicationError::Unknown(error.to_string()))?;
     if !recorded
         && proposals
@@ -806,6 +841,75 @@ fn parse_verdict(
     }
 }
 
+/// 复用发布操作的批准边界；只读对账也不能自行把模型草稿升级为已发布。
+async fn authorize_publication(
+    proposal: &KnowledgeProposal,
+    target: &Path,
+    permissions: &dyn PermissionProvider,
+) -> Result<(), KnowledgePublicationError> {
+    let action = ActionSpec {
+        id: format!("knowledge-publish:{}", proposal.id),
+        tool: "workspace.write_file".into(),
+        arguments: serde_json::json!({"path": target}),
+        resources: vec![ResourceVersion {
+            access: ActionResourceAccess::Write,
+            resource: format!("file://{}", target.display()),
+            version: "absent".into(),
+        }],
+    };
+    let context = ActionContext {
+        run_id: format!("knowledge-review-{}", &proposal.id[..16]),
+        task_id: proposal.id.clone(),
+        generation: 1,
+        policy_version: permissions.version().to_owned(),
+    };
+    match permissions
+        .authorize(context, action)
+        .await
+        .map_err(|error| KnowledgePublicationError::Unknown(error.to_string()))?
+    {
+        Decision::Allow => {}
+        Decision::ApprovalRequired(_) => return Err(KnowledgePublicationError::ApprovalRequired),
+        Decision::Deny(reason) => return Err(KnowledgePublicationError::Stale(reason)),
+    }
+    Ok(())
+}
+
+struct VerifiedPublication<'a> {
+    workspace: &'a Path,
+    proposal: &'a KnowledgeProposal,
+    receipt: &'a PublicationReceipt,
+    bytes: usize,
+}
+impl teal_knowledge::ProposalPublicationVerifier for VerifiedPublication<'_> {
+    fn verify(
+        &self,
+        proposal: &KnowledgeProposal,
+        receipt: &PublicationReceipt,
+    ) -> Result<(), teal_knowledge::ProposalError> {
+        if proposal != self.proposal || receipt != self.receipt {
+            return Err(teal_knowledge::ProposalError::Invalid(
+                "publication identity changed".into(),
+            ));
+        }
+        let store = KnowledgeStore::open(
+            self.workspace,
+            teal_knowledge::KnowledgeScope::Project,
+            teal_knowledge::LayerOptions::default(),
+        )
+        .map_err(|error| teal_knowledge::ProposalError::Invalid(error.to_string()))?;
+        store
+            .read_document(&teal_knowledge::DocumentRef {
+                relative: receipt.path.clone(),
+                sha256: receipt.sha256.clone(),
+                bytes: self.bytes as u64,
+                absolute: self.workspace.join(&receipt.path),
+            })
+            .map_err(|error| teal_knowledge::ProposalError::Invalid(error.to_string()))?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -832,6 +936,131 @@ mod tests {
         teal_security::AuditContext::new(Arc::new(TestAudit(AtomicU64::new(0))))
     }
 
+    struct FabricatedEvidence;
+    impl teal_knowledge::ProposalEvidenceProvider for FabricatedEvidence {
+        fn resolve(
+            &self,
+            _: &str,
+            run: &str,
+            refs: &[String],
+        ) -> Result<Vec<teal_knowledge::ProposalEvidence>, teal_knowledge::ProposalError> {
+            Ok(refs
+                .iter()
+                .map(|reference| teal_knowledge::ProposalEvidence {
+                    reference: reference.clone(),
+                    run_id: run.into(),
+                    kind: "model_tool".into(),
+                    digest: "c".repeat(64),
+                    summary: "fabricated test evidence".into(),
+                })
+                .collect())
+        }
+    }
+
+    fn receipt_id(run: &str, operation: &str, position: u32) -> String {
+        format!(
+            "model-tool-{:x}",
+            Sha256::digest(serde_json::to_vec(&(run, operation, 1u32, position)).unwrap())
+        )
+    }
+
+    // 使用真实账本校验格式；模型回调 ID 刻意与持久收据 ID 不同。
+    fn deliver_fixture(
+        store: &RuntimeStore,
+        run: &str,
+        operation: &str,
+        position: u32,
+        call: &teal_model::ToolCall,
+        value: serde_json::Value,
+    ) {
+        let request = serde_json::to_string(call).unwrap();
+        let result = serde_json::to_string(&ModelMessage::ToolResult {
+            call_id: call.id.clone(),
+            name: call.name.clone(),
+            value,
+            is_error: false,
+            media: Vec::new(),
+        })
+        .unwrap();
+        rusqlite::Connection::open(store.path()).unwrap().execute(
+            "INSERT INTO model_tool_operations(id,run_id,model_operation,round,position,request,request_digest,state,result,result_digest) VALUES (?1,?2,?3,1,?4,?5,?6,'delivered',?7,?8)",
+            rusqlite::params![receipt_id(run,operation,position),run,operation,position,request,format!("{:x}",Sha256::digest(request.as_bytes())),result,format!("{:x}",Sha256::digest(result.as_bytes()))],
+        ).unwrap();
+    }
+
+    fn verified_proposal(
+        workspace: &Path,
+        proposals: &KnowledgeProposalStore,
+    ) -> (RuntimeStore, KnowledgeProposal) {
+        let source = RuntimeStore::open(workspace).unwrap();
+        let compiled = teal::compile_source(
+            teal::Source::new("evidence.tl", "task main() {}"),
+            &teal::FsSourceLoader,
+            teal::CompileOptions::default().with_tier(teal::RuntimeTier::Agentic),
+        )
+        .unwrap();
+        let program =
+            teal_agent::AgentProgram::from_bytes(compiled.serialized_bytes().unwrap().to_vec())
+                .unwrap();
+        let run = source.create_run(&program).unwrap().id;
+        let operation = source
+            .prepare_operation(&run, teal_agent::ExternalOperationKind::Model, "fixture")
+            .unwrap()
+            .id;
+        let evidence = teal_model::ToolCall {
+            id: "provider-call".into(),
+            name: "workspace.read_file".into(),
+            arguments: serde_json::json!({"path":"fact.txt"}),
+        };
+        deliver_fixture(
+            &source,
+            &run,
+            &operation,
+            0,
+            &evidence,
+            serde_json::json!({"text":"Verified source fact"}),
+        );
+        let reference = receipt_id(&run, &operation, 0);
+        let call = teal_model::ToolCall {
+            id: "proposal-call".into(),
+            name: "knowledge.propose".into(),
+            arguments: serde_json::json!({"title":"Stable fact","body":"Verified source fact","source_refs":[reference]}),
+        };
+        let source_event = teal_agent::ReconcileRequest::from_model_tool(
+            &receipt_id(&run, &operation, 1),
+            &run,
+            &serde_json::to_string(&call).unwrap(),
+        )
+        .idempotency_key;
+        let source_digest = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&(&source_event, &call.arguments)).unwrap())
+        );
+        let proposal = proposals
+            .propose_verified(
+                KnowledgeProposalInput {
+                    workspace: teal_security::workspace_id(workspace),
+                    title: "Stable fact".into(),
+                    body: "Verified source fact".into(),
+                    source_run: run.clone(),
+                    source_event,
+                    source_digest,
+                    source_refs: vec![reference],
+                },
+                &source,
+            )
+            .unwrap();
+        deliver_fixture(
+            &source,
+            &run,
+            &operation,
+            1,
+            &call,
+            serde_json::json!({"id":proposal.id}),
+        );
+        (source, proposal)
+    }
+
     #[tokio::test]
     async fn approved_proposal_publishes_once_and_never_overwrites_a_conflict() {
         let directory = tempfile::tempdir().unwrap();
@@ -840,24 +1069,16 @@ mod tests {
         let proposals =
             KnowledgeProposalStore::open_with_audit(&workspace.join("proposals.db"), audit())
                 .unwrap();
-        let created = proposals
-            .propose(KnowledgeProposalInput {
-                workspace: "a".repeat(64),
-                title: "Stable fact".into(),
-                body: "Verified source fact".into(),
-                source_run: "run".into(),
-                source_event: "event".into(),
-                source_digest: "b".repeat(64),
-                source_refs: vec!["tool-1".into()],
-            })
-            .unwrap();
+        let (source, created) = verified_proposal(workspace, &proposals);
+        let packet = build_knowledge_review_packet(&source, &created, None).unwrap();
+        assert!(packet.contains(&created.source_refs[0]));
         assert!(proposals.claim_review(&created.id).unwrap());
         assert!(
             proposals
                 .record_review(
                     &created.id,
                     ProposalReview::Approve {
-                        cited_refs: vec!["tool-1".into()],
+                        cited_refs: created.source_refs.clone(),
                     }
                 )
                 .unwrap()
@@ -902,15 +1123,18 @@ mod tests {
             KnowledgeProposalStore::open_with_audit(&workspace.join("proposals.db"), audit())
                 .unwrap();
         let created = proposals
-            .propose(KnowledgeProposalInput {
-                workspace: "a".repeat(64),
-                title: "Claim".into(),
-                body: "Unproven fact".into(),
-                source_run: "invented-run".into(),
-                source_event: "invented-event".into(),
-                source_digest: "b".repeat(64),
-                source_refs: vec!["invented-call".into()],
-            })
+            .propose_verified(
+                KnowledgeProposalInput {
+                    workspace: "a".repeat(64),
+                    title: "Claim".into(),
+                    body: "Unproven fact".into(),
+                    source_run: "invented-run".into(),
+                    source_event: "invented-event".into(),
+                    source_digest: "b".repeat(64),
+                    source_refs: vec!["invented-call".into()],
+                },
+                &FabricatedEvidence,
+            )
             .unwrap();
         let knowledge =
             KnowledgeStore::open(&root, KnowledgeScope::Project, LayerOptions::default())
@@ -946,15 +1170,18 @@ mod tests {
             KnowledgeProposalStore::open_with_audit(&workspace.join("proposals.db"), audit())
                 .unwrap();
         let created = proposals
-            .propose(KnowledgeProposalInput {
-                workspace: "a".repeat(64),
-                title: "Claim".into(),
-                body: "api_key=secret-value".into(),
-                source_run: "run".into(),
-                source_event: "event".into(),
-                source_digest: "b".repeat(64),
-                source_refs: vec!["call".into()],
-            })
+            .propose_verified(
+                KnowledgeProposalInput {
+                    workspace: "a".repeat(64),
+                    title: "Claim".into(),
+                    body: "api_key=secret-value".into(),
+                    source_run: "run".into(),
+                    source_event: "event".into(),
+                    source_digest: "b".repeat(64),
+                    source_refs: vec!["call".into()],
+                },
+                &FabricatedEvidence,
+            )
             .unwrap();
         let knowledge =
             KnowledgeStore::open(&root, KnowledgeScope::Project, LayerOptions::default())

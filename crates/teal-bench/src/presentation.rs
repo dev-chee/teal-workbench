@@ -1,6 +1,10 @@
 //! 组合可复用界面与服务模型的应用面板。
 
-use teal_workbench_core::WorkspaceIntent;
+use crate::workbench::ui::{
+    ClipboardAction, ClipboardOutcome, ContextMenu, MenuItem, PanelKind, PanelStatus, TextPoint,
+    TextSelection, Widget, WidgetAction, cell_to_char, render_lines_with_selection, selected_text,
+    word_range,
+};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction as LayoutDirection, Layout, Rect},
@@ -8,17 +12,13 @@ use ratatui::{
     text::Line,
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
+use teal_host::web::WebDocument;
+use teal_workbench_core::WorkspaceIntent;
 use teal_workbench_core::{AppCommand, InputEvent, Key};
 use teal_workbench_core::{MouseButton, MouseEvent, MouseEventKind};
 use teal_workbench_services::{
     ExplorerSession, FileExplorer, MarkdownDocument, MarkdownStyle, Preview, SearchMatch,
 };
-use crate::workbench::ui::{
-    ClipboardAction, ClipboardOutcome, ContextMenu, MenuItem, Widget, WidgetAction, PanelKind,
-    PanelStatus, TextPoint, TextSelection, cell_to_char, render_lines_with_selection,
-    selected_text, word_range,
-};
-use teal_web::WebDocument;
 mod app_panel;
 mod browser;
 mod custom;
@@ -233,12 +233,12 @@ fn rect_contains(area: Rect, x: u16, y: u16) -> bool {
 mod tests {
     use std::fs;
 
+    use crate::workbench::ui::{ClipboardAction, Widget, WidgetAction};
     use ratatui::{Frame, Terminal, backend::TestBackend, layout::Rect};
     use teal_workbench_core::{
         AppCommand, InputEvent, Key, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
     };
     use teal_workbench_services::FileSort;
-    use crate::workbench::ui::{ClipboardAction, Widget, WidgetAction};
     use tempfile::tempdir;
     use url::Url;
 
@@ -418,7 +418,7 @@ mod tests {
 
     #[test]
     fn browser_link_rows_click_and_offer_link_actions() {
-        let document = teal_web::WebDocument::from_html(
+        let document = teal_host::web::WebDocument::from_html(
             Url::parse("https://example.com").expect("URL"),
             200,
             "<p>Hello <a href='/next'>Next</a></p>",

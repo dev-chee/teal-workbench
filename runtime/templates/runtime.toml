@@ -1,28 +1,3 @@
-# Teal 语言运行时配置模板（`runtime.toml`）。
-#
-# 复制到用户 `TEAL_HOME/runtime.toml`，或复制到受信任工作区的 `.teal/runtime.toml`。
-# 运行时默认值三层语义一致；命令行参数始终覆盖这里声明的默认值。
-
-# 当前写入格式版本；旧版本配置会被拒绝，不做迁移。
-version = 14
-
-# 默认运行时 Profile；自定义组合在 [profiles] 下声明。
-profile = "agent"
-
-[profiles]
-
-# 用户可见构建配置：`debug` 或 `release`；省略时使用 Release。
-# build_profile = "release"
-# 高级兼容优化级别：`none`、`basic` 或 `aggressive`。
-# optimization = "basic" # legacy advanced override
-
-# 编译器调试输出与调试器变量绑定快照；省略时保持默认。
-# debug = false
-# debug_info = true
-
-# 检查项默认级别；`--allow/--warn/--deny/--forbid` 覆盖同名的配置默认值。
-[lints]
-# allow = ["unused-import"]
-# warn = ["unused-variable"]
-# deny = []
-# forbid = []
+# 运行层级与 VM 限额；不授予资源权限。
+version = 15
+tier = "embedded"

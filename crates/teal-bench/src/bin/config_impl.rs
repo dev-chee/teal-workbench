@@ -5,7 +5,7 @@
 
 use crate::ConfigCommand;
 use teal_config::{
-    ConfigCategory, ConfigDocument, ConfigError, ConfigFile, ConfigLayer, ConfigPaths,
+    ConfigCategory, ConfigDocument, ConfigError, ConfigFile, ConfigPaths, ConfigScope,
     FileConfigSource,
 };
 
@@ -40,11 +40,11 @@ pub(super) fn run(command: ConfigCommand) -> Result<(), String> {
 fn list(
     paths: &ConfigPaths,
     file: Option<ConfigFile>,
-    layer: Option<ConfigLayer>,
+    layer: Option<ConfigScope>,
     json: bool,
 ) -> Result<(), String> {
     let effective =
-        teal_config::load_declarations_paths(paths.clone()).map_err(|error| error.to_string())?;
+        teal_security::load_declarations_paths(paths.clone()).map_err(|error| error.to_string())?;
     let files = file.map_or_else(|| ConfigFile::ALL.to_vec(), |file| vec![file]);
     let mut output = serde_json::Map::new();
     for file in files {
@@ -54,10 +54,10 @@ fn list(
         let mut entries = serde_json::Map::new();
         if let Some(layer) = layer {
             let Some(value) = loaded
-                .layers()
+                .scopes()
                 .iter()
-                .find(|value| value.layer() == layer)
-                .map(teal_config::LayerValue::value)
+                .find(|value| value.scope() == layer)
+                .map(teal_config::ScopeValue::value)
             else {
                 continue;
             };
@@ -71,7 +71,7 @@ fn list(
             for (key, value) in teal_config::flatten(loaded.value()) {
                 let origin = loaded.origin(&key).map_or_else(
                     || "default".to_owned(),
-                    |origin| origin.layer.name().to_owned(),
+                    |origin| origin.scope.name().to_owned(),
                 );
                 entries.insert(key, serde_json::json!({"layer": origin, "value": value}));
             }
@@ -109,20 +109,20 @@ fn get(
     source: &FileConfigSource,
     file: ConfigFile,
     key: &str,
-    layer: Option<ConfigLayer>,
+    layer: Option<ConfigScope>,
     json: bool,
 ) -> Result<(), String> {
     let effective =
-        teal_config::load_declarations_paths(paths.clone()).map_err(|error| error.to_string())?;
+        teal_security::load_declarations_paths(paths.clone()).map_err(|error| error.to_string())?;
     let loaded = effective
         .load_file(file)
         .map_err(|error| error.to_string())?;
     let (value, origin) = match layer {
         Some(layer) => {
             let value = loaded
-                .layers()
+                .scopes()
                 .iter()
-                .find(|value| value.layer() == layer)
+                .find(|value| value.scope() == layer)
                 .and_then(|value| teal_config::value_at_path(value.value(), key))
                 .ok_or_else(|| {
                     format!(
@@ -142,7 +142,7 @@ fn get(
             })?;
             let origin = loaded
                 .origin(key)
-                .map_or("default", |origin| origin.layer.name());
+                .map_or("default", |origin| origin.scope.name());
             (value, origin)
         }
     };
@@ -171,16 +171,16 @@ fn set(
     file: ConfigFile,
     key: &str,
     raw: &str,
-    layer: ConfigLayer,
+    layer: ConfigScope,
     json: bool,
 ) -> Result<(), String> {
     require_available(file)?;
     let value = parse_value(raw, json)?;
-    if layer == ConfigLayer::Workspace {
+    if layer == ConfigScope::Workspace {
         crate::require_workspace_trust()?;
     }
     let update = value.clone();
-    teal_config::edit_value(
+    teal_config::edit_value_with_observer(
         source,
         layer,
         file,
@@ -190,6 +190,7 @@ fn set(
             teal_config::set_value_at_path(document, key, update)?;
             validate_document(file, document)
         },
+        &teal_security::process_context(),
     )
     .map_err(|error| error.to_string())?;
     println!("Set `{}.{key}` in the {} layer.", file.name(), layer.name());
@@ -200,14 +201,14 @@ fn unset(
     source: &FileConfigSource,
     file: ConfigFile,
     key: &str,
-    layer: ConfigLayer,
+    layer: ConfigScope,
 ) -> Result<(), String> {
     require_available(file)?;
-    if layer == ConfigLayer::Workspace {
+    if layer == ConfigScope::Workspace {
         crate::require_workspace_trust()?;
     }
     let existing =
-        teal_config::read_layer(source, layer, file).map_err(|error| error.to_string())?;
+        teal_config::read_scope(source, layer, file).map_err(|error| error.to_string())?;
     let present = existing
         .as_ref()
         .and_then(|value| teal_config::value_at_path(value, key))
@@ -219,7 +220,7 @@ fn unset(
             layer.name()
         ));
     }
-    teal_config::edit_value(
+    teal_config::edit_value_with_observer(
         source,
         layer,
         file,
@@ -229,6 +230,7 @@ fn unset(
             teal_config::remove_value_at_path(document, key)?;
             validate_document(file, document)
         },
+        &teal_security::process_context(),
     )
     .map_err(|error| error.to_string())?;
     println!(
@@ -249,7 +251,7 @@ fn print_paths(paths: &ConfigPaths, json: bool) {
             "present": path.exists(),
         }));
     }
-    for layer in [ConfigLayer::User, ConfigLayer::Workspace] {
+    for layer in [ConfigScope::User, ConfigScope::Workspace] {
         if let Some(path) = paths.env_path(layer) {
             entries.push(serde_json::json!({
                 "layer": layer.name(),
@@ -321,26 +323,36 @@ fn require_available(_file: ConfigFile) -> Result<(), String> {
 }
 
 /// 返回某个类别文件在某一层允许出现的键路径。
-fn allowed_paths(file: ConfigFile, layer: ConfigLayer) -> &'static [&'static str] {
+fn allowed_paths(file: ConfigFile, layer: ConfigScope) -> &'static [&'static str] {
     match file {
-        ConfigFile::Config => <teal_config::TealConfig as ConfigCategory>::allowed_paths(layer),
+        ConfigFile::Config => <teal_security::TealConfig as ConfigCategory>::allowed_paths(layer),
         ConfigFile::Model => <teal_model::ModelDocument as ConfigCategory>::allowed_paths(layer),
         ConfigFile::Bench => bench_allowed_paths(layer),
         ConfigFile::Runtime => <teal::RuntimeDocument as ConfigCategory>::allowed_paths(layer),
+        ConfigFile::Observability => teal_config::ALLOW_ALL,
+        ConfigFile::Agent => teal_config::ALLOW_ALL,
+        ConfigFile::Lint => <teal::LintDefaults as ConfigCategory>::allowed_paths(layer),
+        ConfigFile::Compiler => <teal::CompilerDocument as ConfigCategory>::allowed_paths(layer),
     }
 }
 
-fn bench_allowed_paths(layer: ConfigLayer) -> &'static [&'static str] {
+fn bench_allowed_paths(layer: ConfigScope) -> &'static [&'static str] {
     <teal_bench::config::BenchDocument as ConfigCategory>::allowed_paths(layer)
 }
 
 /// 用所属类别的文档类型校验一份候选内容。
 fn validate_document(file: ConfigFile, value: &toml::Value) -> Result<(), ConfigError> {
     match file {
-        ConfigFile::Config => validate::<teal_config::TealConfig>(value),
+        ConfigFile::Config => validate::<teal_security::TealConfig>(value),
         ConfigFile::Model => validate::<teal_model::ModelDocument>(value),
         ConfigFile::Bench => validate::<teal_bench::config::BenchDocument>(value),
         ConfigFile::Runtime => validate::<teal::RuntimeDocument>(value),
+        ConfigFile::Observability => teal::validate_configuration_document(file, value)
+            .map_err(|message| ConfigError::invalid(file, message)),
+        ConfigFile::Agent => teal::validate_configuration_document(file, value)
+            .map_err(|message| ConfigError::invalid(file, message)),
+        ConfigFile::Lint => validate::<teal::LintDefaults>(value),
+        ConfigFile::Compiler => validate::<teal::CompilerDocument>(value),
     }
 }
 

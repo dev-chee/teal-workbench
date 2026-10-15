@@ -15,8 +15,8 @@ pub(crate) fn execute_permissions_command(command: crate::PermissionsCommand) ->
     };
     let result = match command {
         crate::PermissionsCommand::Show { json } => {
-            teal_config::load_declarations_paths(paths.clone())
-                .map(|effective| effective.workspace_permissions())
+            teal_security::load_declarations_paths(paths.clone())
+                .and_then(|effective| teal_bench::config::permissions(&effective))
                 .and_then(|profile| {
                     if json {
                         println!(
@@ -43,11 +43,11 @@ pub(crate) fn execute_permissions_command(command: crate::PermissionsCommand) ->
                 })
         }
         crate::PermissionsCommand::Preset(preset) => {
-            teal_config::set_permission_preset(&paths, preset)
+            teal_security::set_permission_preset(&paths, preset)
         }
         crate::PermissionsCommand::Grant(file) => (|| {
-            let document = teal_config::read_permission_file(&file)?;
-            teal_config::add_permission_rules(&paths, document.rules)?;
+            let document = teal_security::read_permission_file(&file)?;
+            teal_security::add_permission_rules(&paths, document.rules)?;
             Ok(())
         })(),
         crate::PermissionsCommand::Explain { request, json } => (|| {
@@ -62,8 +62,9 @@ pub(crate) fn execute_permissions_command(command: crate::PermissionsCommand) ->
                     path: request.clone(),
                     message: error.to_string(),
                 })?;
-            let profile =
-                teal_config::load_declarations_paths(paths.clone())?.workspace_permissions();
+            let profile = teal_bench::config::permissions(
+                &teal_security::load_declarations_paths(paths.clone())?,
+            )?;
             let upper = request_value.resources.iter().cloned().fold(
                 teal_security::ExecutionGrant::deny_all("teal-perm/explain/v1"),
                 |grant, resource| {
@@ -72,6 +73,9 @@ pub(crate) fn execute_permissions_command(command: crate::PermissionsCommand) ->
                         operation: request_value.operation.clone(),
                         resource,
                         effect: teal_security::PermissionEffect::Allow,
+                        arguments_digest: request_value.arguments_digest.clone(),
+                        source_digest: request_value.source_digest.clone(),
+                        resource_versions: request_value.resource_versions.clone(),
                     })
                 },
             );
@@ -127,17 +131,9 @@ pub(crate) fn execute_permissions_command(command: crate::PermissionsCommand) ->
             Ok(())
         })(),
         crate::PermissionsCommand::Operations { json } => {
-            let entries = teal_host::ExtensionCatalog::builtin()
+            let entries = teal_security::STANDARD_PERMISSION_OPERATIONS
                 .iter()
-                .flat_map(|extension| {
-                    extension.operations.iter().map(|operation| {
-                        serde_json::json!({
-                            "operation": operation.to_string(),
-                            "extension": extension.id.to_string(),
-                            "contract_version": extension.contract_version,
-                        })
-                    })
-                })
+                .map(|operation| serde_json::json!({"operation":operation}))
                 .collect::<Vec<_>>();
             if json {
                 println!(
@@ -145,15 +141,13 @@ pub(crate) fn execute_permissions_command(command: crate::PermissionsCommand) ->
                     crate::output::json("perm.operations", &entries).unwrap()
                 );
             } else {
-                for extension in teal_host::ExtensionCatalog::builtin().iter() {
-                    for operation in &extension.operations {
-                        println!("{:<28} {}", operation, extension.id);
-                    }
+                for operation in teal_security::STANDARD_PERMISSION_OPERATIONS {
+                    println!("{operation}");
                 }
             }
             Ok(())
         }
-        crate::PermissionsCommand::Revoke => teal_config::revoke_workspace_permissions(&paths),
+        crate::PermissionsCommand::Revoke => teal_security::revoke_workspace_permissions(&paths),
     };
     if let Err(error) = result {
         eprintln!("{error}");

@@ -5,4 +5,4 @@
 # 工作区的 `model.toml` 声明，给用户复制的完整模板是 `runtime/templates/model.toml`。
 
 # 当前写入格式版本；旧版本配置会被拒绝，不做迁移。
-version = 14
+version = 15

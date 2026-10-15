@@ -1,19 +1,20 @@
-use std::{
-    collections::HashMap,
-    io::{self, Read, Write},
-    net::TcpListener,
-    sync::{
-        mpsc, Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    thread,
-    time::Duration,
-};
 use opentelemetry_proto::tonic::collector::{
     logs::v1::ExportLogsServiceRequest, metrics::v1::ExportMetricsServiceRequest,
     trace::v1::ExportTraceServiceRequest,
 };
 use prost::Message as _;
+use std::{
+    collections::HashMap,
+    io::{self, Read, Write},
+    net::TcpListener,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
+    thread,
+    time::Duration,
+};
 use teal_workbench_services::observability::{Arguments, Guard, Options};
 
 fn options(args: Arguments, directory: &std::path::Path, vars: &[(&str, &str)]) -> Options {
@@ -151,6 +152,19 @@ fn all_signals_correlate_real_teal_jobs_and_keep_concurrent_contexts_separate() 
     let dispatch = tracing::Dispatch::new(subscriber);
     let script = dir.path().join("private-token.teal");
     std::fs::write(&script, "host \"std.bench.config\" as config { fn state_set(arg0: string, arg1: string); } fn main() { config::state_set(\"private-token\", \"private-token\"); }").unwrap();
+    struct TestAudit;
+    impl teal_security::AuditSink for TestAudit {
+        fn append(
+            &self,
+            _: &teal_security::Event,
+        ) -> Result<teal_security::Receipt, teal_security::AuditError> {
+            Ok(teal_security::Receipt {
+                sequence: 1,
+                hash: "1".repeat(64),
+            })
+        }
+    }
+    let audit = teal_security::AuditContext::new(Arc::new(TestAudit));
     let state = dir.path().join("state.json");
     tracing::dispatcher::with_default(&dispatch, || {
         tracing::callsite::rebuild_interest_cache();
@@ -160,6 +174,7 @@ fn all_signals_correlate_real_teal_jobs_and_keep_concurrent_contexts_separate() 
             let mut tasks = crate::runtime_bridge::TaskSupervisor::default();
             for id in 1..=2 {
                 let script = script.clone();
+                let audit = audit.clone();
                 let state = state.with_file_name(format!("state-{id}.json"));
                 let meter = meter.clone();
                 let sender = sender.clone();
@@ -173,7 +188,8 @@ fn all_signals_correlate_real_teal_jobs_and_keep_concurrent_contexts_separate() 
                 tasks.spawn(context.instrument(async move {
                     let result = crate::runtime_bridge::spawn_blocking(move || {
                         let mut teal =
-                            teal_workbench_automation::WorkbenchAutomationRuntime::new(state)?;
+                            teal_workbench_automation::WorkbenchAutomationRuntime::new(state)?
+                                .with_audit_context(audit);
                         teal.set_observation(meter, false);
                         let prepared = teal
                             .prepare(&script, teal_workbench_automation::ScriptKind::UserConfig)?;

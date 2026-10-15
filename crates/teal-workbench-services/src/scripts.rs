@@ -1,4 +1,4 @@
-//! 工作区脚本清单：入口、运行配置档、权限文件与测试文件。
+//! 工作区脚本清单：入口、运行层级、权限文件与测试文件。
 //!
 //! 清单是工作区内的显式登记处，源码目录本身不强制约定；读取时校验版本、名称、
 //! 工作区内路径与唯一性，写入使用原子替换。清单只描述脚本，不运行脚本，也不授予权限。
@@ -11,9 +11,9 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use teal_workbench_core::{BufferStore, WorkspaceIntent, WorkspaceMutationCoordinator};
 use tempfile::NamedTempFile;
 use thiserror::Error;
-use teal_workbench_core::{BufferStore, WorkspaceMutationCoordinator, WorkspaceIntent};
 
 /// 清单在工作区内的相对路径。
 pub const SCRIPT_MANIFEST_PATH: &str = ".teal/scripts.toml";
@@ -22,7 +22,7 @@ pub const SCRIPT_MANIFEST_PATH: &str = ".teal/scripts.toml";
 pub const DEFAULT_SCRIPT_DIR: &str = "scripts";
 
 /// 当前清单格式版本。
-const MANIFEST_VERSION: u16 = 1;
+const MANIFEST_VERSION: u16 = 2;
 
 /// 一个脚本的登记项。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,8 +34,8 @@ pub struct ScriptEntry {
     /// 相对工作区的入口 `.tl` 路径。
     pub entry: PathBuf,
 
-    /// 运行时配置档名称。
-    pub profile: String,
+    /// 运行层级。
+    pub tier: String,
 
     /// 可选的相对工作区权限文件。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -51,13 +51,13 @@ pub struct ScriptEntry {
 }
 
 impl ScriptEntry {
-    /// 创建使用默认配置档的登记项。
+    /// 创建使用默认运行层级的登记项。
     #[must_use]
     pub fn new(name: impl Into<String>, entry: impl Into<PathBuf>) -> Self {
         Self {
             name: name.into(),
             entry: entry.into(),
-            profile: "core".to_owned(),
+            tier: "embedded".to_owned(),
             permissions: None,
             tests: Vec::new(),
             artifacts: Vec::new(),
@@ -121,13 +121,18 @@ impl ScriptManifest {
             return Ok(Self::new());
         }
         let text = fs::read_to_string(&path)?;
-        let document: ManifestDocument = toml::from_str(&text)?;
-        if document.version != MANIFEST_VERSION {
+        #[derive(Deserialize)]
+        struct Header {
+            version: u16,
+        }
+        let header: Header = toml::from_str(&text)?;
+        if header.version != MANIFEST_VERSION {
             return Err(ScriptManifestError::Invalid(format!(
                 "unsupported manifest version {}",
-                document.version
+                header.version
             )));
         }
+        let document: ManifestDocument = toml::from_str(&text)?;
         let manifest = Self {
             scripts: document.scripts,
         };
@@ -231,10 +236,10 @@ impl ScriptManifest {
         before != self.scripts.len()
     }
 
-    /// 校验名称、路径与配置档。
+    /// 校验名称、路径与层级。
     ///
     /// # Errors
-    /// 名称非法或重复、路径为绝对路径或指向工作区外、配置档为空时返回错误。
+    /// 名称非法或重复、路径为绝对路径或指向工作区外、层级不属于 embedded/hosted/agentic时返回错误。
     pub fn validate(&self) -> Result<(), ScriptManifestError> {
         let mut names = BTreeSet::new();
         for entry in &self.scripts {
@@ -252,9 +257,9 @@ impl ScriptManifest {
                     entry.name
                 )));
             }
-            if entry.profile.trim().is_empty() {
+            if !matches!(entry.tier.as_str(), "embedded" | "hosted" | "agentic") {
                 return Err(ScriptManifestError::Invalid(format!(
-                    "script `{}` profile must not be empty",
+                    "script `{}` tier is invalid",
                     entry.name
                 )));
             }
@@ -338,8 +343,8 @@ mod tests {
             Some("scripts/hello.tl".into())
         );
         assert_eq!(
-            loaded.find("hello").map(|entry| entry.profile.as_str()),
-            Some("core")
+            loaded.find("hello").map(|entry| entry.tier.as_str()),
+            Some("embedded")
         );
     }
 
@@ -357,7 +362,7 @@ mod tests {
             vec!["alpha", "zeta"]
         );
         let mut replacement = ScriptEntry::new("alpha", "scripts/alpha2.tl");
-        replacement.profile = "agent".into();
+        replacement.tier = "agentic".into();
         manifest.upsert(replacement);
         assert_eq!(manifest.scripts().len(), 2);
         assert_eq!(
@@ -376,7 +381,7 @@ mod tests {
         std::fs::create_dir_all(path.parent().expect("parent")).expect("directory");
         std::fs::write(
             &path,
-            "version = 2\n[[scripts]]\nname = \"hello\"\nentry = \"scripts/hello.tl\"\nprofile = \"core\"\n",
+            "version = 1\n[[scripts]]\nname = \"hello\"\nentry = \"scripts/hello.tl\"\ntier = \"embedded\"\n",
         )
         .expect("fixture");
         assert!(matches!(
@@ -386,8 +391,8 @@ mod tests {
 
         std::fs::write(
             &path,
-            "version = 1\n[[scripts]]\nname = \"hello\"\nentry = \"scripts/hello.tl\"\nprofile = \"core\"\n\
-             [[scripts]]\nname = \"hello\"\nentry = \"scripts/other.tl\"\nprofile = \"core\"\n",
+            "version = 2\n[[scripts]]\nname = \"hello\"\nentry = \"scripts/hello.tl\"\ntier = \"embedded\"\n\
+             [[scripts]]\nname = \"hello\"\nentry = \"scripts/other.tl\"\ntier = \"embedded\"\n",
         )
         .expect("fixture");
         assert!(matches!(

@@ -1,12 +1,12 @@
 //! 工作区项目指令发现。每次读取都通过宿主权限端口，并拒绝目录链接逃逸。
 
+use sha2::{Digest, Sha256};
+use std::io::Read;
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
     sync::Arc,
 };
-use std::io::Read;
-use sha2::{Digest, Sha256};
 use teal_agent::{
     ActionContext, ActionResourceAccess, ActionSpec, AgentError, Decision, InstructionFragment,
     InstructionsProvider, InstructionsSnapshot, PermissionProvider, ProviderFuture,
@@ -236,11 +236,11 @@ fn is_trusted(
     configuration: Option<&teal_config::ConfigPaths>,
 ) -> Result<bool, AgentError> {
     match configuration {
-        Some(paths) => teal_config::load_declarations_paths(paths.clone())
-            .map(|config| {
-                config.workspace_permissions().trust_level == teal_config::TrustLevel::Trusted
-            })
-            .map_err(|error| AgentError::Policy(error.to_string())),
+        Some(paths) => {
+            teal_security::trust_of(paths, &teal_config::FileConfigSource::new(paths.clone()))
+                .map(|trust| trust == teal_security::TrustLevel::Trusted)
+                .map_err(|error| AgentError::Policy(error.to_string()))
+        }
         None => Ok(fixed),
     }
 }

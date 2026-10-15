@@ -8,14 +8,7 @@ use super::{Options, PRODUCTS, validate_product_manifest, workspace_root};
 fn product_site_contains_current_product_libraries() {
     for package in [
         "teal-bench",
-        "teal-browser",
-        "teal-computer",
-        "teal-dap",
-        "teal-fmt",
-        "teal-lsp",
         "teal-lsp-client",
-        "teal-text",
-        "teal-web",
         "teal-workbench-automation",
         "teal-workbench-core",
         "teal-workbench-services",
@@ -41,37 +34,24 @@ fn product_manifest_matches_workspace_libraries_and_reports_omissions() {
     let omitted = PRODUCTS
         .iter()
         .copied()
-        .filter(|product| product.package != "teal-text")
+        .filter(|product| product.package != "teal-lsp-client")
         .collect::<Vec<_>>();
     let error = validate_product_manifest(&workspace, &omitted).unwrap_err();
     let message = error.to_string();
     assert!(message.contains("missing"), "{message}");
-    assert!(message.contains("teal-text"), "{message}");
+    assert!(message.contains("teal-lsp-client"), "{message}");
 }
 
 #[test]
 fn platform_product_crates_use_current_names_and_exclude_retired_packages() {
-    for (package, rustdoc_name, root) in [
-        (
-            "teal-browser",
-            "teal_browser",
-            "crates/teal-browser/src/lib.rs",
-        ),
-        (
-            "teal-computer",
-            "teal_computer",
-            "crates/teal-computer/src/lib.rs",
-        ),
-    ] {
-        let product = PRODUCTS
-            .iter()
-            .find(|product| product.package == package)
-            .unwrap_or_else(|| panic!("missing product crate: {package}"));
-        assert_eq!(product.rustdoc_name, rustdoc_name, "{package}");
-        assert_eq!(product.root, root, "{package}");
-    }
-
     for obsolete_package in [
+        "teal-browser",
+        "teal-computer",
+        "teal-dap",
+        "teal-fmt",
+        "teal-lsp",
+        "teal-text",
+        "teal-web",
         "teal-abi",
         "teal-agent",
         "teal-compiler",

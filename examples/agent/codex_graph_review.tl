@@ -15,8 +15,7 @@ impl Reviewer {
         self.reviews += 1;
         let specialty = self.specialty;
         let round = self.reviews;
-        let prompt = "You are a code-review Agent. Focus on ${specialty}. " +
-            "This is review round ${round}. Review the following content and return only a concise conclusion: ${text}";
+        let prompt = "You are a code-review Agent. Focus on {specialty}. " + "This is review round {round}. Review the following content and return only a concise conclusion: {text}";
         let options = self.options();
         options.model_rounds = 1;
         options.propose_memory = false;
@@ -24,7 +23,11 @@ impl Reviewer {
     }
 }
 
-task main() { entry_task().await; } task entry_task() {
+task main() {
+    entry_task().await;
+}
+
+task entry_task() {
     let correctness = Reviewer {
         specialty: "correctness and boundary conditions",
         reviews: 0,

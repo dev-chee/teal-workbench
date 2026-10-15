@@ -1,25 +1,45 @@
 @edition("2026");
+// 取消由任务组的 Error 结果观察；返回 Error 值的任务正常完成，不冒充 VM 失败。
+task value(number: int) -> int {
+    return number;
+}
 
-// Tier Core：演示纯 CPU Task 的取消、失败传播、同级任务收集和终态查询。
-// 该示例不声明 Agent，也不需要 agent 扩展。
-import "std/error.tl" as errors;
-task value(number: int) -> int { return number; }
-task fail() -> int { throw(errors::make("core", "expected_failure", errors::ErrorOrigin.user, false)); return 0; }
+task fail() -> int | Error {
+    return Error::make("core", "expected_failure", ErrorOrigin.user, false);
+}
 
-task main() { workflow().await; }
-
-task workflow() {
-    // 同一 VM 尚未切换到子任务时取消，结果不依赖线程竞速。
-    let cancelled: Task<int> = value(99);
+task application() -> none | Error {
+    let group = Task::group();
+    let cancelled = value(99);
+    group.add(cancelled);
     cancelled.cancel();
     print(cancelled.status());
-    try { print(cancelled.await); }
-    catch "task_cancelled" { print("handled cancellation"); }
-
+    let joined = group.join().await;
+    match joined {
+        Error { .. } => {
+            print("handled cancellation");
+        } _ => {}
+    }
     let broken = fail();
     let sibling = value(42);
-    try { print(broken.await); }
-    catch "expected_failure" { print("handled failure"); }
-    // 一个分支失败不会自动取消同级分支，调用方仍需收集或取消它。
+    let result = broken.await;
+    match result {
+        Error { .. } => {
+            print("handled failure");
+        } _ => {}
+    }
     print(sibling.await, broken.status(), sibling.status());
+}
+
+/// 入口明确处理失败；未知外部效果仍由 VM 终止。
+task main() -> int {
+    let result = application().await;
+    match result {
+        Error { .. } => {
+            print(result.message);
+            return 1;
+        } _ => {
+            return 0;
+        }
+    }
 }

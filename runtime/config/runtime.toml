@@ -1,15 +1,3 @@
-# Teal 安装层语言运行时默认值（`runtime.toml`）。
-#
-# 该文件随发行分发，位于可执行文件旁的 `runtime/config/`，是优先级最低、只读的安装层。
-# 运行时默认值三层语义一致，这里显式列出安装层允许的全部键；命令行参数始终覆盖配置。
-
-# 当前写入格式版本；旧版本配置会被拒绝，不做迁移。
-version = 14
-
-# 默认运行时 Profile；自定义组合在 [profiles] 下声明。
-profile = "agent"
-
-[profiles]
-
-# 检查项默认级别；`--allow/--warn/--deny/--forbid` 覆盖同名的配置默认值。
-[lints]
+# 运行层级与 VM 限额；不授予资源权限。
+version = 15
+tier = "embedded"

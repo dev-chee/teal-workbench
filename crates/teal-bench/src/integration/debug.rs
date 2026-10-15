@@ -8,16 +8,16 @@ use std::{
     },
 };
 
-use teal_compiler::{CompileOptions, OptimizationLevel, RuntimeProfile, Source, compile};
+use teal_compiler::{CompileOptions, OptimizationLevel, RuntimeTier, Source, compile};
 use teal_host::NativeHostRuntime;
 use teal_vm::{
     DebugLocation, DebugSession, DebugStopReason, Vm, VmDebugControl, VmDebugException,
     VmDebugState, VmDebugger,
 };
 
-use crate::{app::App, presentation::TextPanel, runtime_bridge::RuntimeEvent};
-use teal_workbench_core::{SplitAxis, Severity};
 use crate::workbench::ui::PanelKind;
+use crate::{app::App, presentation::TextPanel, runtime_bridge::RuntimeEvent};
+use teal_workbench_core::{Severity, SplitAxis};
 
 /// 工作台调试面板接收的拥有型状态。
 pub(crate) enum DebugEvent {
@@ -161,7 +161,7 @@ impl BenchDebugger {
                     refresh = true;
                 }
                 Ok(DebugCommand::Evaluate(expression)) => {
-                    let result = match teal_dap::expression::parse(&expression) {
+                    let result = match teal::debug::parse_expression(&expression) {
                         Ok(parsed) => state
                             .evaluate(self.frame, &parsed)
                             .map(|variable| variable.display)
@@ -432,23 +432,22 @@ fn run_debug(
         Source::new(path.to_string_lossy(), contents),
         &teal::FsSourceLoader,
         CompileOptions::default()
-            .with_runtime_profile(RuntimeProfile::core())
+            .with_tier(RuntimeTier::Embedded)
             .with_optimization(OptimizationLevel::None)
             .with_debug_info(true),
     )
     .map_err(|error| error.message)?;
     let session = DebugSession::new(&compiled.program.source_map, true);
     let mut host = NativeHostRuntime::builder()
-        .trusted()
-        .trusted()
-        .authorization(Arc::new(teal::HostExecutionGrant::core_only(
+        .audit_context(teal_security::process_context())
+        .authorization(Arc::new(teal::HostExecutionGrant::deny_all(
             "teal-bench/debug/v1",
         )))
         .build()
         .map_err(|error| error.to_string())?;
     let mut vm = Vm::load_with_host_runtime(
         compiled.program,
-        teal_vm::VmOptions::for_profile(RuntimeProfile::core()),
+        teal_vm::VmOptions::for_tier(RuntimeTier::Embedded),
         &mut host,
     )
     .map_err(|error| error.to_string())?;

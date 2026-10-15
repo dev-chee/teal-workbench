@@ -1,13 +1,13 @@
-format = 5
+format = 7
 name = "bench"
 version = "3.2.0"
 language_edition = "2026"
 dependencies = ["std"]
 
 [modules]
-"browser.tl" = "workbench"
-"computer.tl" = "workbench"
-"evidence.tl" = "workbench"
-"extension.tl" = "workbench"
-"tools.tl" = "workbench"
-"ui.tl" = "workbench"
+"browser.tl" = "hosted"
+"computer.tl" = "hosted"
+"evidence.tl" = "hosted"
+"extension.tl" = "hosted"
+"tools.tl" = "hosted"
+"ui.tl" = "hosted"

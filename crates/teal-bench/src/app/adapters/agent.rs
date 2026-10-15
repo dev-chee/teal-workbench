@@ -1,19 +1,19 @@
 //! Teal Agent 的界面入口、源码输入与工作区检查点回滚。
 
+use similar::TextDiff;
 use std::{
     io::Write as _,
     path::{Path, PathBuf},
     sync::Arc,
 };
-use similar::TextDiff;
 
 use teal_workbench_services::{
     delivery_paths, execute_agent_commit, preflight_agent_commit, preflight_verified_agent_commit,
 };
 
 use super::{
-    App, AppPanel, SplitAxis, ConfirmOverlay, EditorPanel, MenuItem, MutationKind, MutationRequest,
-    PanelKind, PendingConfirmation, PendingOverlay, PickerOverlay, RuntimeEvent, Severity,
+    App, AppPanel, ConfirmOverlay, EditorPanel, MenuItem, MutationKind, MutationRequest, PanelKind,
+    PendingConfirmation, PendingOverlay, PickerOverlay, RuntimeEvent, Severity, SplitAxis,
     TextPanel, mutation,
 };
 use crate::presentation::AgentBlock;
@@ -66,10 +66,10 @@ mod commit_tests {
             program_digest: teal_workbench_services::compile_digest_in_workspace(
                 root,
                 &root.join(path),
-                "agent",
+                "agentic",
             )
             .unwrap(),
-            runtime_profile: "agent".into(),
+            tier: "agentic".into(),
             evidence: Vec::new(),
             accepted_at_ms: 1,
         }
@@ -175,9 +175,9 @@ mod commit_tests {
     }
 }
 
-#[path = "agent/preparation.rs"]
-mod preparation;
 #[path = "agent/editing.rs"]
 mod editing;
+#[path = "agent/preparation.rs"]
+mod preparation;
 #[path = "agent/queries.rs"]
 mod queries;

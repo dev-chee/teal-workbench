@@ -1,6 +1,8 @@
 //! 阶段任务运行与终态重投递，业务阶段由扩展事件处理器决定。
 use super::*;
-use teal_agent::{ExternalOperationState, ManagedEffectState, ModelToolState, RunState, RuntimeStore};
+use teal_agent::{
+    ExternalOperationState, ManagedEffectState, ModelToolState, RunState, RuntimeStore,
+};
 use teal_model::Cancellation;
 
 impl App {
@@ -383,10 +385,21 @@ impl App {
                         profile: resolved.context.profile.to_string(),
                         model: resolved.requirement.model.clone(),
                         compaction_profile: compaction_profile.clone(),
+                        compaction_model: None,
                         instructions: settings.instructions.clone(),
                     },
                 );
             }
+            let program = teal_agent::AgentProgram::from_shared_bytes(
+                entry.program().serialized_bytes().map_err(err)?,
+            )
+            .map_err(err)?;
+            bindings = program
+                .resolve_model_bindings(
+                    &bindings,
+                    &self.model_access.configuration().map_err(err)?.document,
+                )
+                .map_err(err)?;
         } else if task.run_id.is_some() {
             for (agent, binding) in &bindings.source_agents {
                 let resolved = authenticated
@@ -422,9 +435,14 @@ impl App {
             hosts::validate_write_scope(&self.workspace, &l.instance, &paths)?;
         }
         let store = Arc::new(RuntimeStore::open(&self.workspace).map_err(err)?);
-        let prepared =
-            teal::prepare_execution(entry.program(), &store, key, &sha256(&context), bindings)
-                .map_err(err)?;
+        let prepared = teal::prepare_execution(
+            entry.program(),
+            Arc::clone(&store),
+            key,
+            &sha256(&context),
+            bindings,
+        )
+        .map_err(err)?;
         let event = ExtensionEvent {
             id: key.into(),
             kind: "task".into(),
@@ -478,10 +496,7 @@ impl App {
             .with_memory(self.agent_memory.clone())
             .with_skills(self.agent_skills.clone());
         let host = teal::NativeHostRuntime::builder()
-            .trusted()
-            .trusted()
-            .trusted()
-            .trusted()
+            .audit_context(teal_security::process_context())
             .standard_registry(registry)
             .authorization(grant.clone())
             .echo(false)

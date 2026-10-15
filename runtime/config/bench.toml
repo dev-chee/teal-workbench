@@ -5,7 +5,7 @@
 # 给用户复制的完整模板是 `runtime/templates/bench.toml`。
 
 # 当前写入格式版本；旧版本配置会被拒绝，不做迁移。
-version = 14
+version = 15
 
 # 会话恢复策略：`prompt`、`always` 或 `never`。
 # session_restore = "prompt"

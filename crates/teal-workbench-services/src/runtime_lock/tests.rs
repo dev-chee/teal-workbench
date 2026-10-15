@@ -25,7 +25,7 @@ fn lock_round_trip_and_cache_require_exact_hashes() {
         "0.1.0",
         packages.clone().into_iter().rev().collect(),
         vec![artifact.clone()],
-        "native",
+        "hosted",
     )
     .unwrap();
     let path = directory.path().join(".teal/runtime.lock");
@@ -66,7 +66,7 @@ fn lock_round_trip_and_cache_require_exact_hashes() {
 
 #[test]
 fn lock_can_bind_core_and_extension_catalog_identities() {
-    let lock = RuntimeLock::new("0.1.0", Vec::new(), Vec::new(), "native")
+    let lock = RuntimeLock::new("0.1.0", Vec::new(), Vec::new(), "hosted")
         .unwrap()
         .with_catalog_identity("a".repeat(64), Some("b".repeat(64)), PACKAGE_FORMAT_VERSION);
     assert_eq!(lock.core_catalog_digest, "a".repeat(64));
@@ -79,7 +79,7 @@ fn incompatible_lock_is_rejected_without_rewrite() {
     let directory = tempfile::tempdir().unwrap();
     // 未来版本用当前版本号加一表示，避免测试在 LOCK_VERSION 提升后误当受支持版本。
     let future = format!(
-        r#"{{"version":{},"teal_version":"x","packages":[],"artifacts":[],"runtime_profile":"native"}}"#,
+        r#"{{"version":{},"teal_version":"x","packages":[],"artifacts":[],"tier":"hosted"}}"#,
         LOCK_VERSION + 1
     );
     for (name, contents) in [
@@ -93,15 +93,15 @@ fn incompatible_lock_is_rejected_without_rewrite() {
         ),
         (
             "profile-v3.lock",
-            r#"{"version":3,"teal_version":"x","runtime_manifest_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifacts":[],"runtime_profile":"native"}"#,
+            r#"{"version":3,"teal_version":"x","runtime_manifest_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifacts":[],"tier":"hosted"}"#,
         ),
         (
             "profile-v4.lock",
-            r#"{"version":4,"teal_version":"x","runtime_manifest_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifacts":[],"runtime_profile":"native"}"#,
+            r#"{"version":4,"teal_version":"x","runtime_manifest_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifacts":[],"tier":"hosted"}"#,
         ),
         (
             "packages-v5.lock",
-            r#"{"version":5,"teal_version":"x","packages":[],"artifacts":[],"runtime_profile":"native"}"#,
+            r#"{"version":5,"teal_version":"x","packages":[],"artifacts":[],"tier":"hosted"}"#,
         ),
         ("future.lock", future.as_str()),
     ] {

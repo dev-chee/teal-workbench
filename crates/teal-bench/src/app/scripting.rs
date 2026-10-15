@@ -4,12 +4,12 @@
 //! 来源分类与工作区信任不能互相替代；显式 source 的边界见工作台手册与包 README。
 
 use super::{
-    App, AppPanel, Arc, SplitAxis, BridgeAction, BridgeState, CommandRegistry, Duration, HashMap,
-    HostError, HostCallSignature, HostValue, Instant, Mutex, PanelId, Path, PathBuf, RuntimeEvent,
-    RuntimeType, ScriptKind, Severity, TrustDecision, TrustStore,
+    App, AppPanel, Arc, BridgeAction, BridgeState, CommandRegistry, Duration, HashMap,
+    HostCallSignature, HostError, HostValue, Instant, Mutex, PanelId, Path, PathBuf, RuntimeEvent,
+    RuntimeType, ScriptKind, Severity, SplitAxis, TrustDecision, TrustStore,
 };
-use teal_workbench_automation::RuntimeSnapshot;
 use std::collections::{BTreeMap, VecDeque};
+use teal_workbench_automation::RuntimeSnapshot;
 
 const HOOKS: &[&str] = &[
     "app.started",
@@ -773,7 +773,7 @@ pub(super) fn refresh_directory_trust(
 ) -> Result<(), String> {
     let paths =
         teal_config::ConfigPaths::discover(Some(workspace_path)).map_err(|e| e.to_string())?;
-    let _ = teal_config::load_declarations_paths(paths).map_err(|e| e.to_string())?;
+    let _ = teal_security::load_declarations_paths(paths).map_err(|e| e.to_string())?;
     trust
         .clear_directory_approvals()
         .map_err(|e| e.to_string())?;

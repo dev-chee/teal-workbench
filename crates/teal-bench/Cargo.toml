@@ -25,14 +25,12 @@ teal-agent = { workspace = true, features = ["codex-auth"] }
 teal-model = { workspace = true, features = ["codex-auth"] }
 teal-compiler.workspace = true
 teal-config.workspace = true
-teal-host = { workspace = true, features = ["ffi"] }
+teal-host = { workspace = true, features = ["browser", "computer", "web"] }
 teal-workbench-automation.workspace = true
 teal-workbench-core = { workspace = true, features = ["syntax"] }
 teal-lsp-client.workspace = true
-teal-dap.workspace = true
 teal-workbench-services = { workspace = true, features = ["tools", "observability"] }
 teal-knowledge.workspace = true
-teal-web.workspace = true
 teal = { workspace = true, features = ["ffi"] }
 teal-vm.workspace = true
 tempfile.workspace = true

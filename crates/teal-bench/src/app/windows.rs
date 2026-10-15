@@ -562,12 +562,10 @@ impl App {
             .unwrap_or_else(|| self.workspace.display().to_string());
         let mut chips = vec![format!("agent {agent}"), workspace];
         if let Ok(paths) = teal_config::ConfigPaths::discover(Some(&self.workspace))
-            && let Ok(effective) = teal_config::load_declarations_paths(paths)
+            && let Ok(effective) = teal_security::load_declarations_paths(paths)
+            && let Ok(permissions) = crate::config::permissions(&effective)
         {
-            chips.push(format!(
-                "permissions {:?}",
-                effective.workspace_permissions().preset
-            ));
+            chips.push(format!("permissions {:?}", permissions.preset));
         }
         chips
     }

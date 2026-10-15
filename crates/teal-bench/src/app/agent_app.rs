@@ -8,8 +8,8 @@ use std::{
     },
 };
 
-use tokio::sync::mpsc;
 use sha2::{Digest, Sha256};
+use tokio::sync::mpsc;
 
 use super::{App, Severity};
 use crate::{presentation::AgentBlock, runtime_bridge::RuntimeEvent};
@@ -309,12 +309,12 @@ pub(super) fn source_agent_grant(
 ) -> Arc<teal::HostExecutionGrant> {
     let grant = (*tools.agent_grant())
         .clone()
-        .allow_capability("filesystem.inspect")
+        .allow_permission("filesystem.inspect")
         .allow_tools(program.inspection().source_tools.iter().cloned());
     Arc::new(if model_calls_enabled {
         grant
     } else {
-        grant.restrict_capabilities([
+        grant.restrict_permissions([
             "editor.read",
             "editor.write",
             "agent.plan",
@@ -364,11 +364,15 @@ async fn drive_default_agent(
         &WorkspaceSourceLoader {
             workspace: workspace.clone(),
         },
-        teal::CompileOptions::default().with_runtime_profile(teal::RuntimeProfile::agent()),
+        teal::CompileOptions::default().with_tier(teal::RuntimeTier::Agentic),
     )
     .map_err(|error| error.to_string())?;
-    let program =
-        teal_agent::AgentProgram::from_compiled(&compiled).map_err(|error| error.to_string())?;
+    let program = teal_agent::AgentProgram::from_shared_bytes(
+        compiled
+            .serialized_bytes()
+            .map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
     let store =
         Arc::new(teal_agent::RuntimeStore::open(&workspace).map_err(|error| error.to_string())?);
     let mut registry = tools
@@ -472,9 +476,13 @@ async fn drive_default_agent(
         .with_agent_factories(program.inspection().source_roles.keys().cloned())
         .map_err(|error| error.to_string())?;
     if model_calls_enabled {
-        let config =
-            teal_config::load_declarations(Some(&workspace)).map_err(|error| error.to_string())?;
-        if config.workspace_trusted() && config.knowledge().enabled {
+        let config = teal_security::load_declarations(Some(&workspace))
+            .map_err(|error| error.to_string())?;
+        if crate::config::trusted(&config).map_err(|error| error.to_string())?
+            && crate::config::knowledge(&config)
+                .map_err(|error| error.to_string())?
+                .enabled
+        {
             let store = teal_knowledge::KnowledgeProposalStore::open_with_audit(
                 &config
                     .paths()
@@ -493,7 +501,9 @@ async fn drive_default_agent(
             let store = Arc::new(store);
             proposal_store = Some(Arc::clone(&store));
             proposal_workspace = identity.clone();
-            proposal_root = config.knowledge().workspace_layer_root(&workspace);
+            proposal_root = crate::config::knowledge(&config)
+                .map_err(|error| error.to_string())?
+                .workspace_scope_root(&workspace);
             services = services.with_knowledge_proposals(store, identity);
         }
     }
@@ -506,10 +516,7 @@ async fn drive_default_agent(
         ));
     }
     let mut host = teal::NativeHostRuntime::builder()
-        .trusted()
-        .trusted()
-        .trusted()
-        .trusted()
+        .audit_context(teal_security::process_context())
         .authorization(grant.clone())
         .console(false)
         .file_system(true)
@@ -579,16 +586,27 @@ async fn drive_default_agent(
                 std::process::id(),
                 SOURCE_LAUNCH_SEQUENCE.fetch_add(1, Ordering::Relaxed)
             );
+            let bindings = program
+                .resolve_model_bindings(
+                    &teal::ExecutionBindings::default(),
+                    &access
+                        .configuration()
+                        .map_err(|error| error.to_string())?
+                        .document,
+                )
+                .map_err(|error| error.to_string())?;
             let prepared = teal::prepare_execution(
                 &compiled,
-                store.as_ref(),
+                Arc::clone(&store),
                 &launch_key,
                 &context_digest,
-                teal::ExecutionBindings::default(),
+                bindings,
             )
             .map_err(|error| error.to_string())?;
             let run_id = prepared.run_id.clone();
             store
+                .claim_run(&run_id)
+                .map_err(|error| error.to_string())?
                 .save_checkpoint(&run_id, "agent-app-identity", app_identity.as_bytes())
                 .map_err(|error| error.to_string())?;
             let execution = prepared
@@ -604,7 +622,7 @@ async fn drive_default_agent(
         }
     };
     output
-        .send(RuntimeEvent::AgentAppReady(services.clone()))
+        .send(RuntimeEvent::AgentAppReady(Box::new(services.clone())))
         .await
         .map_err(|_| "Agent application event channel is closed".to_owned())?;
     let result: Result<(), String> = async {
@@ -758,9 +776,35 @@ mod tests {
             )
             .unwrap(),
         );
-        let access =
-            teal_model::ModelAccess::open(Arc::new(teal_model::ModelConfiguration::Empty)).unwrap();
+        let access = test_model_access(root);
         (tools, permissions, memory, access)
+    }
+
+    fn test_model_access(root: &Path) -> teal_model::ModelAccess {
+        let model_root = root.join("test-model-config");
+        std::fs::create_dir_all(&model_root).unwrap();
+        std::fs::write(
+            model_root.join("model.toml"),
+            r#"
+version = 15
+default = "test"
+[profiles.test]
+provider = "local-test"
+auth_profile = "default"
+model = "test"
+[providers.local-test.access]
+endpoint = "http://127.0.0.1:9"
+protocol = "chat_completions"
+local = true
+[providers.local-test.auth_profiles.default]
+[providers.local-test.models.test]
+"#,
+        )
+        .unwrap();
+        teal_model::ModelAccess::open(Arc::new(teal_model::ModelConfiguration::toml(
+            teal_model::TomlModelConfiguration::from_root(model_root).unwrap(),
+        )))
+        .unwrap()
     }
 
     async fn run_source_once(
@@ -789,13 +833,13 @@ mod tests {
             Vec::new(),
             input_rx,
             crate::runtime_bridge::RuntimeSender::new(event_tx),
-            true,
+            false,
         )
         .await
     }
 
     #[tokio::test]
-    async fn default_agent_exits_without_a_model_or_bench_flow() {
+    async fn default_agent_exits_without_a_model_request_or_bench_flow() {
         let _ = teal_security::install_process_sink(Arc::new(AuditSink));
         let root = tempfile::tempdir().unwrap();
         let _environment = crate::app::test_support::TestHomeGuard::set(&root.path().join("home"));
@@ -812,8 +856,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let access =
-            teal_model::ModelAccess::open(Arc::new(teal_model::ModelConfiguration::Empty)).unwrap();
+        let access = test_model_access(root.path());
         let memory = Arc::new(
             teal_agent::MemoryStore::open(
                 root.path().join("user-memory.sqlite3"),
@@ -909,8 +952,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let access =
-            teal_model::ModelAccess::open(Arc::new(teal_model::ModelConfiguration::Empty)).unwrap();
+        let access = test_model_access(root.path());
         let memory = Arc::new(
             teal_agent::MemoryStore::open(
                 root.path().join("user-memory.sqlite3"),
@@ -983,8 +1025,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let access =
-            teal_model::ModelAccess::open(Arc::new(teal_model::ModelConfiguration::Empty)).unwrap();
+        let access = test_model_access(root.path());
         let memory = Arc::new(
             teal_agent::MemoryStore::open(
                 root.path().join("user-memory.sqlite3"),
@@ -1008,7 +1049,7 @@ mod tests {
             Vec::new(),
             first_input,
             crate::runtime_bridge::RuntimeSender::new(first_events),
-            true,
+            false,
         ));
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
             loop {
@@ -1028,7 +1069,7 @@ mod tests {
         drop(held_input);
         drop(output);
 
-        let store = teal_agent::RuntimeStore::open(root.path()).unwrap();
+        let store = Arc::new(teal_agent::RuntimeStore::open(root.path()).unwrap());
         let before = store.runs().unwrap();
         assert_eq!(before.len(), 1);
         let (next_input_tx, next_input) = mpsc::channel(8);
@@ -1050,7 +1091,7 @@ mod tests {
                 Vec::new(),
                 next_input,
                 crate::runtime_bridge::RuntimeSender::new(next_events),
-                true,
+                false,
             ),
         )
         .await
@@ -1078,7 +1119,7 @@ mod tests {
             Vec::new(),
             other_input,
             crate::runtime_bridge::RuntimeSender::new(other_events),
-            true,
+            false,
         )
         .await
         .unwrap();
@@ -1199,7 +1240,7 @@ mod tests {
             Vec::new(),
             first_input,
             crate::runtime_bridge::RuntimeSender::new(first_events),
-            true,
+            false,
         ));
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
             loop {
@@ -1231,7 +1272,7 @@ mod tests {
             Vec::new(),
             second_input,
             crate::runtime_bridge::RuntimeSender::new(second_events),
-            true,
+            false,
         ));
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
             loop {
@@ -1250,7 +1291,7 @@ mod tests {
         drop(held_second);
         drop(second_output);
 
-        let store = teal_agent::RuntimeStore::open(root.path()).unwrap();
+        let store = Arc::new(teal_agent::RuntimeStore::open(root.path()).unwrap());
         let runs = store.runs().unwrap();
         assert_eq!(runs.len(), 2);
         let other_identity = b"other:builtin/default";
@@ -1265,6 +1306,8 @@ mod tests {
             })
             .expect("the second application run should be identifiable");
         store
+            .claim_run(&other.id)
+            .unwrap()
             .save_checkpoint(&other.id, "agent-app-identity", b"default:builtin/default")
             .unwrap();
 
@@ -1282,7 +1325,7 @@ mod tests {
             Vec::new(),
             input_rx,
             crate::runtime_bridge::RuntimeSender::new(event_tx),
-            true,
+            false,
         )
         .await
         .unwrap_err();
@@ -1304,11 +1347,13 @@ mod tests {
             &WorkspaceSourceLoader {
                 workspace: root.path().to_path_buf(),
             },
-            teal::CompileOptions::default().with_runtime_profile(teal::RuntimeProfile::agent()),
+            teal::CompileOptions::default().with_tier(teal::RuntimeTier::Agentic),
         )
         .unwrap();
-        let program = teal_agent::AgentProgram::from_compiled(&compiled).unwrap();
-        let store = teal_agent::RuntimeStore::open(root.path()).unwrap();
+        let program =
+            teal_agent::AgentProgram::from_shared_bytes(compiled.serialized_bytes().unwrap())
+                .unwrap();
+        let store = Arc::new(teal_agent::RuntimeStore::open(root.path()).unwrap());
         let launch_identity = format!(
             "custom:{}:{}",
             script.canonicalize().unwrap().display(),
@@ -1317,13 +1362,15 @@ mod tests {
         let context_digest = format!("{:x}", Sha256::digest(launch_identity.as_bytes()));
         let prepared = teal::prepare_execution(
             &compiled,
-            &store,
+            Arc::clone(&store),
             "agent-app:unstarted",
             &context_digest,
             teal::ExecutionBindings::default(),
         )
         .unwrap();
         store
+            .claim_run(&prepared.run_id)
+            .unwrap()
             .save_checkpoint(
                 &prepared.run_id,
                 "agent-app-identity",
@@ -1346,7 +1393,7 @@ mod tests {
             Vec::new(),
             input_rx,
             crate::runtime_bridge::RuntimeSender::new(event_tx),
-            true,
+            false,
         )
         .await
         .unwrap_err();

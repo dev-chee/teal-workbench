@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use teal_config::{ALLOW_ALL, ConfigCategory, ConfigDocument, ConfigFile, ConfigLayer};
+use teal_config::{ALLOW_ALL, ConfigCategory, ConfigDocument, ConfigFile, ConfigScope};
 
 /// 一个由 Teal 源码定义全部行为的 Agent 应用入口。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -105,13 +105,13 @@ impl ConfigCategory for BenchDocument {
 
     type Document = Self;
 
-    fn allowed_paths(layer: ConfigLayer) -> &'static [&'static str] {
+    fn allowed_paths(layer: ConfigScope) -> &'static [&'static str] {
         match layer {
             // 安装层只提供界面默认值，不能携带脚本、插件、MCP 或 Agent 声明。
-            ConfigLayer::Install => &["session_restore"],
-            ConfigLayer::User => ALLOW_ALL,
+            ConfigScope::Install => &["session_restore"],
+            ConfigScope::User => ALLOW_ALL,
             // 受信任工作区只登记本工作区的行为声明。
-            ConfigLayer::Workspace => &[
+            ConfigScope::Workspace => &[
                 "session_restore",
                 "agent_apps",
                 "mcp_servers",
@@ -122,6 +122,33 @@ impl ConfigCategory for BenchDocument {
             ],
         }
     }
+}
+
+/// 从已按信任范围加载的配置中读取知识选项；非法领域文档返回错误。
+pub fn knowledge(
+    effective: &teal_config::EffectiveConfig,
+) -> Result<teal_security::KnowledgeConfig, teal_config::ConfigError> {
+    Ok(effective
+        .category::<teal_security::TealConfig>()?
+        .document()
+        .knowledge
+        .clone())
+}
+
+/// 按 Security 的规范工作区身份计算权限；不创建批准或执行副作用。
+pub fn permissions(
+    effective: &teal_config::EffectiveConfig,
+) -> Result<teal_security::WorkspacePermissionConfig, teal_config::ConfigError> {
+    let resolved = effective.category::<teal_security::TealConfig>()?;
+    Ok(teal_security::workspace_permissions(
+        effective.paths(),
+        resolved.document(),
+    ))
+}
+
+/// 读取工作区信任；解析失败不能当作受信任。
+pub fn trusted(effective: &teal_config::EffectiveConfig) -> Result<bool, teal_config::ConfigError> {
+    Ok(permissions(effective)?.trust_level == teal_security::TrustLevel::Trusted)
 }
 
 #[cfg(test)]

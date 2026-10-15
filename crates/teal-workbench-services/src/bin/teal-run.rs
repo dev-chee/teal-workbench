@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use teal_agent::{ActionContext, ActionSpec, Decision, PermissionProvider, PolicyError, ProviderFuture};
+use teal_agent::{
+    ActionContext, ActionSpec, Decision, PermissionProvider, PolicyError, ProviderFuture,
+};
 
 fn main() {
     let args = std::env::args_os().skip(1).collect::<Vec<_>>();
@@ -32,23 +34,28 @@ fn main() {
 
 fn knowledge_provider() -> Result<Arc<dyn teal_agent::KnowledgeProvider>, String> {
     let workspace = std::env::current_dir().map_err(|error| error.to_string())?;
-    let effective = teal_config::load(Some(&workspace)).map_err(|error| error.to_string())?;
-    let config = effective.knowledge().clone();
+    let effective = teal_security::load(Some(&workspace)).map_err(|error| error.to_string())?;
+    let resolved = effective
+        .category::<teal_security::TealConfig>()
+        .map_err(|error| error.to_string())?;
+    let permissions = teal_security::workspace_permissions(effective.paths(), resolved.document());
+    let config = resolved.document().knowledge.clone();
     let options = teal_knowledge::LayerOptions {
         cache: config.cache,
         max_files: config.max_files,
         max_bytes: config.max_bytes,
     };
     let user = if config.enabled {
-        Some(config.user_layer_root(&effective.paths().teal_home))
+        Some(config.user_scope_root(&effective.paths().teal_home))
     } else {
         None
     };
-    let project = if config.enabled && effective.workspace_trusted() {
-        Some(config.workspace_layer_root(&workspace))
-    } else {
-        None
-    };
+    let project =
+        if config.enabled && (permissions.trust_level == teal_security::TrustLevel::Trusted) {
+            Some(config.workspace_scope_root(&workspace))
+        } else {
+            None
+        };
     let mut knowledge = teal_workbench_services::WorkbenchKnowledge::official()
         .map_err(|error| error.to_string())?
         .with_layers(user, project, options)

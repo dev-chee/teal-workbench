@@ -299,9 +299,24 @@ impl WorkspaceMutationCoordinator {
         text: &str,
         confined: bool,
     ) -> Result<(), String> {
+        self.create_new_resolved(buffers, self.resolve_write(path, confined)?, text)
+    }
+
+    /// 消费授权前解析并固定的目标，原子创建仍不存在的文本文件。
+    ///
+    /// 调用方以 `target.path()` 授权，并跨等待期持有该对象；本方法不重新解释路径。
+    ///
+    /// # Errors
+    /// 工作区或祖先身份变化、目标已经存在、缓冲区冲突、审计或写入失败时返回错误。
+    pub fn create_new_resolved(
+        &self,
+        buffers: &BufferStore,
+        target: ResolvedTarget,
+        text: &str,
+    ) -> Result<(), String> {
         self.audited(|| {
-            let target = self.resolve_write(path, confined)?;
             target.require_workspace(&self.root)?;
+            target.revalidate()?;
             if target.is_dir() || target.exists() || buffers.find(target.path()).is_some() {
                 return Err("Workspace creation target already exists".into());
             }
@@ -639,7 +654,9 @@ impl WorkspaceMutationCoordinator {
         } else {
             // 平台回收站 API 只接受完整路径，无法继承已验证父目录句柄；拒绝旧路径副作用，
             // 避免祖先替换后把工作区外的对象移入回收站。
-            return Err("Non-permanent deletion is unavailable for anchored workspace entries".into());
+            return Err(
+                "Non-permanent deletion is unavailable for anchored workspace entries".into(),
+            );
         }
         for (buffer, _, previous) in affected {
             buffer.relocate(entry.is_link().then_some(previous));

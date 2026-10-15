@@ -4,9 +4,9 @@
 //! 真正访问路径的宿主还必须在回调前执行对应的动态资源授权。
 
 use std::sync::{Arc, Mutex};
-use teal_compiler::{CompileOptions, RuntimeProfile, Source};
-use teal_core::ExecutionGrant;
+use teal_compiler::{CompileOptions, RuntimeTier, Source};
 use teal_host::{HostFunctionDefinition, HostRegistry, NativeHostRuntime};
+use teal_runtime::HostExecutionGrant as ExecutionGrant;
 use teal_runtime::{FsSourceLoader, RunPhase, compile_source, execute_program_with_audit};
 use teal_vm::{ExternalCallRecovery, HostCallSignature, HostError, HostValue, RuntimeType};
 
@@ -70,28 +70,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             include_str!("safe_host_declarations.tl"),
         ),
         &FsSourceLoader,
-        CompileOptions::default().with_runtime_profile(RuntimeProfile::agent()),
+        CompileOptions::default().with_tier(RuntimeTier::Agentic),
     )?;
     // 同一份策略绑定到真实 HostRuntime；声明函数并不等于授予调用权限。
     let mut denied = NativeHostRuntime::builder()
         .trusted()
         .registry(registry.clone())
-        .authorization(Arc::new(ExecutionGrant::core_only("example/denied/v1")))
+        .authorization(Arc::new(ExecutionGrant::deny_all("example/denied/v1")))
         .build()?;
     let audit = teal_security::AuditContext::new(Arc::new(ExampleAuditSink));
     let failure = execute_program_with_audit(
         program.clone(),
         &mut denied,
-        teal_runtime::VmOptions::for_profile(RuntimeProfile::agent()),
+        teal_runtime::VmOptions::for_tier(RuntimeTier::Agentic),
         audit.clone(),
     )
     .expect_err("Missing grant must fail");
     assert_eq!(failure.phase, RunPhase::Load);
     assert!(!*applied.lock().unwrap());
 
-    let grant = ExecutionGrant::core_only("example/editor/v1")
-        .allow_capability("editor.read")
-        .allow_capability("editor.write");
+    let grant = ExecutionGrant::deny_all("example/editor/v1")
+        .allow_permission("editor.read")
+        .allow_permission("editor.write");
     let mut host = NativeHostRuntime::builder()
         .trusted()
         .registry(registry)
@@ -100,7 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     execute_program_with_audit(
         program,
         &mut host,
-        teal_runtime::VmOptions::for_profile(RuntimeProfile::agent()),
+        teal_runtime::VmOptions::for_tier(RuntimeTier::Agentic),
         audit,
     )?;
     assert!(*applied.lock().unwrap());

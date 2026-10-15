@@ -12,43 +12,43 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::workbench::ui::{
+    AgentComposerWidget, CallStackWidget, ClipboardAction, CmdlineAction, CmdlineMode,
+    CompletionMenu, ComposerMode, ComposerWidget, ConfirmOverlay, ContextMenu, ContextMenuOverlay,
+    DebugConsoleWidget, EditorPanel, FrameGeometry, HoverView, MenuItem, OverlayAction,
+    OverlayStack, PanelKind, PanelStore, PickerOverlay, Prompt, VariablesWidget, Widget,
+    WidgetAction, render_frame,
+};
 use crossterm::event::{
     Event, EventStream, KeyCode, KeyEventKind, KeyModifiers as CrosstermModifiers,
     MouseButton as CrosstermMouseButton, MouseEvent as CrosstermMouseEvent,
     MouseEventKind as CrosstermMouseEventKind,
 };
 use futures_util::StreamExt;
+use sha2::{Digest, Sha256};
+use teal::{HostCallSignature, HostError, HostValue, RuntimeType};
 use teal_agent::{InlineCompletion, MemoryStore, SkillCatalog};
+use teal_host::web::TextBrowser;
+use teal_lsp_client::{
+    JsonRpcId, LineIndex, LspClient, LspEvent, ServerConfig, TextDocumentChange,
+    WorkspaceOperation, parse_workspace_edit,
+};
+use teal_workbench_automation::{
+    AgentSettings, McpSettings, ScriptKind, TrustDecision, TrustStore, WorkbenchAutomationRuntime,
+};
+use teal_workbench_core::syntax::{GrammarSpec, ParserTable};
 use teal_workbench_core::{
     AppCommand, CommandInvocation, CommandRegistry, Direction, InputEvent, Key, KeyModifiers,
-    KeymapPreset, LayoutError, LayoutTree, Message, MessageLog, MouseButton, MouseEvent,
-    MouseEventKind, LayoutSpec, NodeSpec, PanelId, PanelSize, RecoveryJournal, Rect, Severity,
-    ResizeAnchor, SplitAxis, SplitDivider, TextEdit, Transaction, Window, WindowCloseError,
-    WindowId, WindowKind, WindowSet, WorkspaceIntent, WorkspaceMutationCoordinator,
-};
-use teal_lsp_client::{
-    parse_workspace_edit, JsonRpcId, LineIndex, LspClient, LspEvent, ServerConfig,
-    TextDocumentChange, WorkspaceOperation,
+    KeymapPreset, LayoutError, LayoutSpec, LayoutTree, Message, MessageLog, MouseButton,
+    MouseEvent, MouseEventKind, NodeSpec, PanelId, PanelSize, RecoveryJournal, Rect, ResizeAnchor,
+    Severity, SplitAxis, SplitDivider, TextEdit, Transaction, Window, WindowCloseError, WindowId,
+    WindowKind, WindowSet, WorkspaceIntent, WorkspaceMutationCoordinator,
 };
 use teal_workbench_services::{
     ClipboardBackend, MarkdownDocument, PanelSession, RuntimeCache, RuntimeLock, RuntimeLockStatus,
     SearchService, SessionPaths, SessionState, SystemClipboard, load_session, run_command,
     save_session,
 };
-use teal_workbench_core::syntax::{GrammarSpec, ParserTable};
-use teal_workbench_automation::{
-    AgentSettings, WorkbenchAutomationRuntime, McpSettings, ScriptKind, TrustDecision, TrustStore,
-};
-use crate::workbench::ui::{
-    AgentComposerWidget, CallStackWidget, ClipboardAction, CmdlineAction, CmdlineMode,
-    CompletionMenu, ComposerMode, ComposerWidget, ConfirmOverlay, ContextMenu, ContextMenuOverlay,
-    DebugConsoleWidget, EditorPanel, FrameGeometry, HoverView, MenuItem, OverlayAction, Prompt,
-    OverlayStack, PanelKind, PanelStore, PickerOverlay, VariablesWidget, Widget, WidgetAction,
-    render_frame,
-};
-use teal_web::TextBrowser;
-use sha2::{Digest, Sha256};
-use teal::{HostError, HostCallSignature, HostValue, RuntimeType};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::{
@@ -132,13 +132,12 @@ pub(crate) mod test_support {
         }
     }
 }
+pub(crate) mod agent_questions;
 #[cfg(test)]
 mod analysis_graph_tests;
-pub(crate) mod agent_questions;
 pub(crate) mod background;
 pub(crate) mod bootstrap;
 mod commands;
-pub(crate) mod knowledge;
 #[cfg(test)]
 mod diagnostics_tests;
 mod engineering;
@@ -148,17 +147,18 @@ pub(crate) mod extensions;
 #[cfg(test)]
 mod extensions_tests;
 pub(crate) mod files;
-pub(crate) mod lsp;
+pub(crate) mod knowledge;
 #[cfg(test)]
 mod loopback_tests;
+pub(crate) mod lsp;
 pub(crate) mod mutation;
 pub(crate) mod scripting;
 mod session;
 pub(crate) mod tests_view;
 mod views;
-mod windows;
 #[cfg(test)]
 mod window_tests;
+mod windows;
 #[path = "app/adapters/workspace.rs"]
 pub(crate) mod workspace;
 

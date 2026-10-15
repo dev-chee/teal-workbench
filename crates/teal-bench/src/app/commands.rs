@@ -17,8 +17,8 @@ use teal_agent::{
 use tokio::sync::oneshot;
 
 use crate::app::mutation;
-use teal_workbench_services::tools::MutationKind;
 use teal_workbench_services::RuntimeLockStatus;
+use teal_workbench_services::tools::MutationKind;
 
 enum MemoryCommand {
     Candidates,
@@ -625,8 +625,8 @@ impl App {
                 let knowledge = Arc::clone(&self.agent_knowledge);
                 let permissions = Arc::clone(&self.agent_permissions);
                 let output = self.background_tx.clone();
-                let config = match teal_config::load_declarations(Some(&workspace)) {
-                    Ok(config) => config.knowledge().clone(),
+                let config = match teal_security::load_declarations(Some(&workspace)) {
+                    Ok(config) => match crate::config::knowledge(&config) { Ok(value) => value, Err(error) => { self.message(Severity::Error, "knowledge", error.to_string()); return; } },
                     Err(error) => {
                         self.message(Severity::Error, "knowledge", error.to_string());
                         return;
@@ -798,14 +798,22 @@ impl App {
 
     /// 显式维护记忆候选：默认只做确定性提取，模型辅助提取必须由配置显式启用。
     fn run_memory_maintenance(&mut self, model_assisted: bool) {
-        let config = match teal_config::load_declarations(Some(&self.workspace)) {
+        let (config, trusted) = match teal_security::load_declarations(Some(&self.workspace))
+            .and_then(|effective| {
+                Ok((
+                    effective
+                        .category::<teal_security::TealConfig>()?
+                        .into_document(),
+                    crate::config::trusted(&effective)?,
+                ))
+            }) {
             Ok(config) => config,
             Err(error) => {
                 self.message(Severity::Error, "memory", error.to_string());
                 return;
             }
         };
-        if !config.memory_maintenance_enabled() {
+        if !config.memory.maintenance {
             self.message(
                 Severity::Info,
                 "memory",
@@ -813,7 +821,8 @@ impl App {
             );
             return;
         }
-        if model_assisted && !config.memory_model_assisted_enabled() {
+        if model_assisted && !(config.memory.maintenance && config.memory.model_assisted && trusted)
+        {
             self.message(
                 Severity::Error,
                 "memory",
@@ -1074,10 +1083,12 @@ impl App {
             }
         };
         let show = || {
-            teal_config::load_declarations_paths(paths.clone())
+            teal_security::load_declarations_paths(paths.clone())
                 .map_err(|error| error.to_string())
-                .map(|effective| {
-                    let profile = effective.workspace_permissions();
+                .and_then(|effective| {
+                    crate::config::permissions(&effective).map_err(|error| error.to_string())
+                })
+                .map(|profile| {
                     format!(
                         "preset={:?} generation={} rules={}",
                         profile.preset,
@@ -1089,22 +1100,24 @@ impl App {
         let result = match arguments {
             [] => show(),
             [action] if action == "show" => show(),
-            [action] if action == "develop" => {
-                teal_config::set_permission_preset(&paths, teal_security::PermissionPreset::Develop)
-                    .map_err(|error| error.to_string())
-                    .map(|()| "Workspace development permissions enabled".to_owned())
-            }
+            [action] if action == "develop" => teal_security::set_permission_preset(
+                &paths,
+                teal_security::PermissionPreset::Develop,
+            )
+            .map_err(|error| error.to_string())
+            .map(|()| "Workspace development permissions enabled".to_owned()),
             [action] if action == "ask" => {
-                teal_config::set_permission_preset(&paths, teal_security::PermissionPreset::Ask)
+                teal_security::set_permission_preset(&paths, teal_security::PermissionPreset::Ask)
                     .map_err(|error| error.to_string())
                     .map(|()| "Workspace permission mode set to ask".to_owned())
             }
-            [action] if action == "explore" => {
-                teal_config::set_permission_preset(&paths, teal_security::PermissionPreset::Explore)
-                    .map_err(|error| error.to_string())
-                    .map(|()| "Workspace permission mode set to explore (read-only)".to_owned())
-            }
-            [action] if action == "revoke" => teal_config::revoke_workspace_permissions(&paths)
+            [action] if action == "explore" => teal_security::set_permission_preset(
+                &paths,
+                teal_security::PermissionPreset::Explore,
+            )
+            .map_err(|error| error.to_string())
+            .map(|()| "Workspace permission mode set to explore (read-only)".to_owned()),
+            [action] if action == "revoke" => teal_security::revoke_workspace_permissions(&paths)
                 .map_err(|error| error.to_string())
                 .and_then(|()| {
                     self.trust
@@ -1140,7 +1153,7 @@ impl App {
             let profile = self
                 .runtime_lock
                 .as_ref()
-                .map_or_else(|| "agent".to_owned(), |lock| lock.runtime_profile.clone());
+                .map_or_else(|| "agentic".to_owned(), |lock| lock.tier.clone());
             let lock = match teal_workbench_services::RuntimeLock::new(
                 env!("CARGO_PKG_VERSION"),
                 self.runtime_packages.clone(),
@@ -1590,7 +1603,7 @@ impl App {
                 };
                 self.open_path(self.workspace.join(entry.entry));
             }
-            [action, name, profile] if action == "profile" => {
+            [action, name, profile] if action == "tier" => {
                 if manifest.find(name).is_none() {
                     self.message(
                         Severity::Error,
@@ -1599,9 +1612,9 @@ impl App {
                     );
                     return;
                 }
-                self.apply_script_profile(name, profile);
+                self.apply_script_tier(name, profile);
             }
-            [action, name] if action == "profile" => {
+            [action, name] if action == "tier" => {
                 if manifest.find(name).is_none() {
                     self.message(
                         Severity::Error,
@@ -1610,13 +1623,9 @@ impl App {
                     );
                     return;
                 }
-                let profiles = self.runtime_profile_names();
+                let profiles = self.tier_names();
                 if profiles.is_empty() {
-                    self.message(
-                        Severity::Warning,
-                        "script",
-                        "No runtime profile is available",
-                    );
+                    self.message(Severity::Warning, "script", "No runtime tier is available");
                     return;
                 }
                 let items = profiles
@@ -1625,7 +1634,7 @@ impl App {
                     .map(|(index, profile)| MenuItem::enabled(index.to_string(), profile.clone()))
                     .collect();
                 self.overlays
-                    .push(PickerOverlay::with_items("runtime profile", items));
+                    .push(PickerOverlay::with_items("runtime tier", items));
                 self.pending_overlay = Some(PendingOverlay::ScriptProfile {
                     name: name.clone(),
                     profiles,
@@ -1634,13 +1643,13 @@ impl App {
             _ => self.message(
                 Severity::Error,
                 "script",
-                "Usage: :script [list|new NAME|open NAME|profile NAME PROFILE]",
+                "Usage: :script [list|new NAME|open NAME|tier NAME TIER]",
             ),
         }
     }
 
     /// 把脚本的运行时配置档写回清单。
-    pub(in crate::app) fn apply_script_profile(&mut self, name: &str, profile: &str) {
+    pub(in crate::app) fn apply_script_tier(&mut self, name: &str, profile: &str) {
         let mut manifest = match teal_workbench_services::ScriptManifest::load(&self.workspace) {
             Ok(manifest) => manifest,
             Err(error) => {
@@ -1656,7 +1665,7 @@ impl App {
             );
             return;
         };
-        entry.profile = profile.to_owned();
+        entry.tier = profile.to_owned();
         manifest.upsert(entry);
         match manifest.save_with_workspace_transaction(
             &self.workspace,
@@ -1673,20 +1682,11 @@ impl App {
     }
 
     /// 返回内置与配置中声明的运行时配置档名称。
-    fn runtime_profile_names(&self) -> Vec<String> {
-        let mut names = teal::RuntimeProfile::BUILTIN_NAMES
-            .iter()
-            .map(|name| (*name).to_owned())
-            .collect::<Vec<_>>();
-        if self.config_enabled
-            && let Ok(effective) = teal_config::load_declarations(Some(&self.workspace))
-            && let Ok(runtime) = effective.category::<teal::RuntimeDocument>()
-        {
-            names.extend(runtime.into_document().profiles.keys().cloned());
-        }
-        names.sort();
-        names.dedup();
-        names
+    fn tier_names(&self) -> Vec<String> {
+        ["embedded", "hosted", "agentic"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
     }
     fn list_scripts(&mut self, manifest: &teal_workbench_services::ScriptManifest) {
         if manifest.scripts().is_empty() {
@@ -1755,7 +1755,10 @@ impl App {
                     .get(self.windows.focused())
                     .and_then(AppPanel::as_browser)
                     .map(|b| b.url().clone())
-                    && let Err(error) = TextBrowser::open_url_external(&url)
+                    && let Err(error) = TextBrowser::open_url_external_with_audit(
+                        &url,
+                        &teal_security::process_context().into(),
+                    )
                 {
                     self.message(Severity::Error, "browser", error.to_string());
                 }
@@ -1769,7 +1772,10 @@ impl App {
                 }
                 match url::Url::parse(&url) {
                     Ok(url) => {
-                        if let Err(error) = TextBrowser::open_url_external(&url) {
+                        if let Err(error) = TextBrowser::open_url_external_with_audit(
+                            &url,
+                            &teal_security::process_context().into(),
+                        ) {
                             self.message(Severity::Error, "browser", error.to_string());
                         }
                     }
@@ -2135,7 +2141,7 @@ fn script_scaffold(name: &str) -> String {
 fn render_scripts(manifest: &teal_workbench_services::ScriptManifest) -> String {
     let mut lines = vec!["Workspace scripts".to_owned(), String::new()];
     for entry in manifest.scripts() {
-        lines.push(format!("{}  [profile: {}]", entry.name, entry.profile));
+        lines.push(format!("{}  [tier: {}]", entry.name, entry.tier));
         lines.push(format!("  entry: {}", entry.entry.display()));
         if let Some(permissions) = &entry.permissions {
             lines.push(format!("  permissions: {}", permissions.display()));
@@ -2173,7 +2179,7 @@ pub(super) fn render_delivery(
         format!("Delivery record for flow {flow}"),
         String::new(),
         format!("summary: {}", receipt.summary),
-        format!("runtime profile: {}", receipt.runtime_profile),
+        format!("runtime tier: {}", receipt.tier),
         format!("program digest: {}", receipt.program_digest),
         format!("accepted at (unix ms): {}", receipt.accepted_at_ms),
         String::new(),

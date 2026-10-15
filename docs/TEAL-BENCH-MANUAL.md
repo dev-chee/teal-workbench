@@ -149,7 +149,7 @@ Debug 控制台按工作台命令执行，`!` 前缀同样执行宿主命令。
 `teal config list|get|set|unset|paths` 查看和修改这些文件；`--layer install|user|workspace` 选择目标层，`list`/`get` 会显示每个键实际来自哪一层。旧版本配置一律拒绝读取，也不迁移；必须删除或按当前布局重写。
 
 ```toml
-version = 14
+version = 15
 
 session_restore = "prompt"
 
@@ -179,13 +179,13 @@ Teal 工作台启动时若未提供路径且发现已保存的工作区会话，
 
 自动化脚本可用模块为 `std.bench.config`、`std.bench.syntax`、`std.bench.editor`、`std.bench.network` 和 `std.bench.process`。`std.bench.config` 只服务用户显式执行的动态自动化；启动配置的权威入口是 TOML。安全模式跳过总体配置；显式 source 命令仍属于用户主动操作。Agent profile 只在配置中保存秘密变量名，秘密值位于环境或 `.env`。
 
-工作区可以把脚本登记到 `.teal/scripts.toml`（格式 v1）：每个登记项声明名称、相对工作区的
-入口 `.tl`、运行时配置档，以及可选的权限文件、测试入口和交付产物。登记项只描述脚本本身，
-不授予任何权限，也不会自动运行。`:script` 或 `:script list` 列出脚本，`:script new NAME`
-在 `scripts/NAME.tl` 生成带 `fn main() -> int` 的骨架并打开它，`:script open NAME` 打开入口，
-`:script profile NAME` 打开配置档选择器（内置 `core`/`native`/`agent` 与配置中声明的自定义
-profile），`:script profile NAME PROFILE` 直接指定配置档。名称只接受 ASCII 字母数字与 `-_.`，
-入口必须是工作区内的 `.tl`，越界路径与重复名称会被拒绝。
+工作区可以把脚本登记到 `.teal/scripts.toml`（格式 v2）：每项声明名称、相对工作区的
+入口 `.tl`、`tier`，以及可选权限文件、测试入口和交付产物。清单不授予权限或自动运行。
+`:script` 或 `:script list` 列出脚本，`:script new NAME` 生成并打开骨架，
+`:script open NAME` 打开入口，`:script tier NAME` 打开层级选择器，
+`:script tier NAME TIER` 指定 `embedded`、`hosted` 或 `agentic`。名称只接受 ASCII
+字母数字与 `-_.`，入口必须在工作区内。旧 v1 清单被拒绝，原文件保留；迁移时把
+`profile` 改为 `tier`，映射旧 core/native/agent 为上述三层。层级不替代权限批准。
 
 ### 3.1 工作区与工具链能力
 
@@ -194,11 +194,17 @@ profile），`:script profile NAME PROFILE` 直接指定配置档。名称只接
 ```tl
 import "bench/tools.tl" as tools;
 
-task main() { workflow().await; }
-task workflow() {
-    let source = tools::read_file("src/main.tl").await;
-    let matches = tools::search("TODO").await;
+task workflow() -> none | Error {
+    let source = tools::read_file("src/main.tl").await?;
+    let matches = tools::search("TODO").await?;
     print(source.len() + matches.len());
+}
+task main() -> int {
+    let result = workflow().await;
+    match result {
+        Error { .. } => { print(result.message); return 1; }
+        _ => { return 0; }
+    }
 }
 ```
 
@@ -206,20 +212,20 @@ task workflow() {
 `teal_check`、`teal_fmt_check`、`teal_test`、`teal_run` 和 `fetch`。`diagnostics("")` 以 JSON 字符串返回整个工作区的
 诊断，非空路径只返回对应文件。文件路径仍限制在活动工作区；写入和替换进入根应用的共享
 事务队列并保留检查点，进程调用仍需对应信任或交互批准。脚本信任基于实际使用推导出的
-`editor.read`、`editor.write`、`process.spawn` 和 `network.http` capability，不因导入模块自动授予。
-`teal_test(path, runtime_profile, filter)` 运行脚本登记的 `@test` 测试：`filter` 为空时运行全部，
+`editor.read`、`editor.write`、`process.spawn` 和 `network.http` Permission，不因导入模块自动授予。
+`teal_test(path, tier, filter)` 运行脚本登记的 `@test` 测试：`filter` 为空时运行全部，
 否则只运行名称包含该子串的测试；退出码非零表示存在失败或超时，没有登记测试时返回成功并说明原因；
 测试证据与 `teal.check` 使用同一程序摘要。该工具与 `teal.check`、`teal.fmt_check`、`teal.run`
 一样在 Task 中默认直接可见，`develop` 档位在工作区内自动放行（与 `teal.run` 同规则）。
 
-这些函数是普通 Teal task，调用方必须使用 `.await`。Agent 目录由同一组
+这些函数是普通 Teal task，调用方使用 `.await` 等待并处理 `T | Error` 返回值。Agent 目录由同一组
 `HostFunctionDefinition` 和工具导出元数据生成，不再维护另一套参数 Schema 或回调；脚本和模型
 仍使用各自的授权入口，脚本信任不能代替模型工具批准。
 
-标准包（`git`、`http`、`oauth`、`feishu`）与工作台脚本使用同一授权模型：RuntimeProfile
-只决定实现可用性，不授予权限；实际可访问的程序、文件、网络端点和环境变量仍由 capability 与
+工作台扩展包（`git`、`http`、`oauth`、`feishu`）与工作台脚本使用同一授权模型：RuntimeTier
+只决定实现可用性，不授予权限；实际可访问的程序、文件、网络端点和环境变量仍由 Permission 与
 资源授权决定，工作区信任不会扩大这组授权。接口、依赖与示例见
-[Teal 语言手册的标准包](TEAL-LANG-MANUAL.md#标准包)。
+[分发资源说明](../runtime/README.md)。
 
 `bench.mcp_servers.<name>` 接受 `http` 或 `stdio`；HTTP 的参数数组必须为空，stdio 参数以
 TOML 字符串数组声明且不经过 shell。配置不得包含凭证，认证由宿主提供。Agent Hook 还可注册 `agent.before_model`、`agent.after_model`、`agent.before_tool`、
@@ -274,7 +280,7 @@ Teal 工作台直接使用 teal-agent 的认证、模型协议、类型化工具
 
 ~~~toml
 # model.toml：模型预设选择 provider、认证资料和默认模型
-version = 14
+version = 15
 
 [profiles.work]
 provider = "codex"
@@ -374,7 +380,7 @@ CDP 接口没有任意 JavaScript 入口；可访问性节点绑定页面 genera
 `bench/computer.tl` 在 Windows 上优先使用 UI Automation 的 Invoke 和 Value pattern。`ComputerWindow`
 只公开 `process_id()`、`title()` 和 `generation()` 查询，底层窗口句柄保持私有。窗口、元素 RuntimeId
 与 generation 共同组成资源身份；快照或交互后旧引用失效。原始鼠标和按键位于
-`computer.raw_input` 独立 capability 下，不作为语义操作失败后的自动回退。其他平台返回明确的不支持错误。
+`computer.raw_input` 独立 Permission 下，不作为语义操作失败后的自动回退。其他平台返回明确的不支持错误。
 
 打开文档的写入经过共享缓冲区事务，关闭文档使用同一原子写入器；写入前创建检查点。
 打开结果和资源修改按规范路径代次协调，旧读取不能覆盖较新的磁盘或缓冲区状态。文件

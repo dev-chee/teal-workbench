@@ -206,7 +206,7 @@ impl App {
             }
             RuntimeEvent::AgentAppEvent(event) => self.handle_source_agent_event(event),
             RuntimeEvent::AgentAppReady(services) => {
-                self.agent_app_services = Some(services);
+                self.agent_app_services = Some(*services);
                 // 源码 Agent 已完成 RuntimeStore 装配；后续 Graph/运行管理查询复用同一账本。
                 if let Ok(store) = teal_agent::RuntimeStore::connect(&self.workspace) {
                     self.agent_session_store = Some(std::sync::Arc::new(store));
@@ -845,7 +845,7 @@ impl App {
                     if let Ok(index) = value.parse::<usize>()
                         && let Some(profile) = profiles.get(index)
                     {
-                        self.apply_script_profile(&name, profile);
+                        self.apply_script_tier(&name, profile);
                     }
                 }
                 Some(PendingOverlay::Context(target)) => {

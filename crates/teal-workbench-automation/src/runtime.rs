@@ -11,14 +11,14 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use teal_workbench_core::syntax::GrammarSpec;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use teal::{
-    CompileOptions, CompiledProgram, ExternalCallRecovery, ProfileFsSourceLoader, HostError,
-    HostCallSignature, HostFunctionDefinition, HostRegistry, HostValue, DylibPolicy,
-    NativeHostRuntime, RuntimeProfile, RuntimeType, Source, VmOptions,
+    CompileOptions, CompiledProgram, DylibPolicy, ExternalCallRecovery, HostCallSignature,
+    HostError, HostFunctionDefinition, HostRegistry, HostValue, NativeHostRuntime,
+    ProfileFsSourceLoader, RuntimeTier, RuntimeType, Source, VmOptions,
 };
+use teal_workbench_core::syntax::GrammarSpec;
 use thiserror::Error;
 
 use crate::{GrammarHost, TrustDecision, TrustStore, builtin_grammar_scripts};
@@ -27,7 +27,7 @@ use crate::{GrammarHost, TrustDecision, TrustStore, builtin_grammar_scripts};
 mod example_tests;
 
 fn automation_compile_options() -> CompileOptions {
-    CompileOptions::default().with_runtime_profile(RuntimeProfile::agent())
+    CompileOptions::default().with_tier(RuntimeTier::Agentic)
 }
 
 fn register_host<F>(
@@ -325,8 +325,7 @@ impl WorkbenchAutomationRuntime {
         grant: Arc<teal::HostExecutionGrant>,
     ) -> Result<i32, RuntimeError> {
         let mut host = NativeHostRuntime::builder()
-            .trusted()
-            .trusted()
+            .audit_context(self.audit.clone())
             .standard_registry(self.registry.clone())
             .dylib_policy(DylibPolicy::Deny)
             .authorization(grant.clone())
@@ -344,7 +343,7 @@ impl WorkbenchAutomationRuntime {
             .execute_program(
                 prepared.program.clone(),
                 &mut host,
-                VmOptions::for_profile(RuntimeProfile::agent()),
+                VmOptions::for_tier(RuntimeTier::Agentic),
             )
             .map(|result| result.exit_code)
             .map_err(|e| RuntimeError::Teal(e.to_string()))
@@ -550,13 +549,12 @@ impl WorkbenchAutomationRuntime {
         let _execution = self.execution.lock().map_err(|_| RuntimeError::Poisoned)?;
         let grant = grant.unwrap_or_else(|| {
             Arc::new(
-                teal::HostExecutionGrant::core_only("teal-bench/automation/v2")
-                    .allow_capabilities(prepared.capabilities.iter().cloned()),
+                teal::HostExecutionGrant::deny_all("teal-bench/automation/v2")
+                    .allow_permissions(prepared.capabilities.iter().cloned()),
             )
         });
         let mut host = NativeHostRuntime::builder()
-            .trusted()
-            .trusted()
+            .audit_context(self.audit.clone())
             .arguments(vec![context_json.to_owned()])
             .echo(false)
             .standard_registry(self.registry.clone())
@@ -588,7 +586,7 @@ impl WorkbenchAutomationRuntime {
             .execute_program(
                 prepared.program,
                 &mut host,
-                VmOptions::for_profile(RuntimeProfile::agent()),
+                VmOptions::for_tier(RuntimeTier::Agentic),
             )
             .map_err(|error| RuntimeError::Teal(error.to_string()))?;
         self.persist_state()?;
@@ -612,12 +610,11 @@ impl WorkbenchAutomationRuntime {
                     RuntimeError::Teal(format!("Built-in grammar `{language}`: {error}"))
                 })?;
             let grant = Arc::new(
-                teal::HostExecutionGrant::core_only("teal-bench/builtin-grammar/v1")
-                    .allow_capabilities(prepared.capabilities.iter().cloned()),
+                teal::HostExecutionGrant::deny_all("teal-bench/builtin-grammar/v1")
+                    .allow_permissions(prepared.capabilities.iter().cloned()),
             );
             let mut host = NativeHostRuntime::builder()
-                .trusted()
-                .trusted()
+                .audit_context(self.audit.clone())
                 .standard_registry(self.registry.clone())
                 .dylib_policy(DylibPolicy::Deny)
                 .authorization(grant)
@@ -627,7 +624,7 @@ impl WorkbenchAutomationRuntime {
                 .execute_program(
                     prepared.program,
                     &mut host,
-                    VmOptions::for_profile(RuntimeProfile::agent()),
+                    VmOptions::for_tier(RuntimeTier::Agentic),
                 )
                 .map_err(|error| RuntimeError::Teal(error.to_string()))?;
         }
@@ -670,8 +667,7 @@ impl WorkbenchAutomationRuntime {
             .map_err(|error| RuntimeError::Teal(error.to_string()))?;
 
         let mut host = NativeHostRuntime::builder()
-            .trusted()
-            .trusted()
+            .audit_context(self.audit.clone())
             .standard_registry(self.registry.clone())
             .dylib_policy(DylibPolicy::Deny)
             .build()
@@ -679,7 +675,7 @@ impl WorkbenchAutomationRuntime {
         let request = program
             .execution_request(&mut host)
             .map_err(|error| RuntimeError::Teal(error.to_string()))?;
-        let capabilities = request.required_capabilities().clone();
+        let capabilities = request.required_permissions().clone();
         let mut source_inputs = loader
             .inputs
             .into_inner()
@@ -1058,7 +1054,7 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use crate::{WorkbenchAutomationRuntime, ScriptKind};
+    use crate::{ScriptKind, WorkbenchAutomationRuntime};
 
     #[derive(Default)]
     struct TestAuditSink(Mutex<Vec<teal_security::Event>>);

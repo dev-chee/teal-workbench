@@ -4,9 +4,9 @@
 //! 永久删除、移动和外部动作保留各自确认路径。
 
 use super::{
-    App, AppPanel, Arc, SplitAxis, BrowserPanel, CmdlineMode, ConfirmOverlay, Prompt,
-    ExplorerPanel, PanelId, PathBuf, PendingConfirmation, PendingOverlay, PendingPrompt,
-    RuntimeEvent, SearchService, Severity, TextBrowser, TextPanel, WorkspaceIntent, lsp, mutation,
+    App, AppPanel, Arc, BrowserPanel, CmdlineMode, ConfirmOverlay, ExplorerPanel, PanelId, PathBuf,
+    PendingConfirmation, PendingOverlay, PendingPrompt, Prompt, RuntimeEvent, SearchService,
+    Severity, SplitAxis, TextBrowser, TextPanel, WorkspaceIntent, lsp, mutation,
 };
 
 impl App {
@@ -258,7 +258,7 @@ impl App {
             self.windows.focused()
         } else {
             self.add_panel(
-                BrowserPanel::new(teal_web::WebDocument {
+                BrowserPanel::new(teal_host::web::WebDocument {
                     url: parsed.clone(),
                     title: parsed.to_string(),
                     status: 0,
@@ -273,7 +273,9 @@ impl App {
         self.browser_requests.insert(panel, sequence);
         let output = self.runtime_tx.clone();
         self.tasks.spawn(async move {
-            let result = match TextBrowser::new() {
+            let result = match TextBrowser::new()
+                .map(|browser| browser.with_audit_context(teal_security::process_context()))
+            {
                 Ok(mut browser) => {
                     let result = if head {
                         browser.head(parsed.as_str()).await

@@ -1,40 +1,40 @@
-#[path = "config_output.rs"]
-mod output;
 #[path = "config_impl.rs"]
 mod config_impl;
+#[path = "config_output.rs"]
+mod output;
 #[path = "perm_impl.rs"]
 mod perm_impl;
 
+use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 use std::{
     io::{self, IsTerminal, Write},
     path::PathBuf,
 };
-use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ConfigCommand {
     List {
         file: Option<teal_config::ConfigFile>,
-        layer: Option<teal_config::ConfigLayer>,
+        layer: Option<teal_config::ConfigScope>,
         json: bool,
     },
     Get {
         file: teal_config::ConfigFile,
         key: String,
-        layer: Option<teal_config::ConfigLayer>,
+        layer: Option<teal_config::ConfigScope>,
         json: bool,
     },
     Set {
         file: teal_config::ConfigFile,
         key: String,
         value: String,
-        layer: teal_config::ConfigLayer,
+        layer: teal_config::ConfigScope,
         json: bool,
     },
     Unset {
         file: teal_config::ConfigFile,
         key: String,
-        layer: teal_config::ConfigLayer,
+        layer: teal_config::ConfigScope,
     },
     Paths {
         json: bool,
@@ -109,9 +109,9 @@ enum ConfigBuiltin {
         format: Format,
     },
 }
-fn layer(v: Option<String>) -> Result<Option<teal_config::ConfigLayer>, String> {
+fn layer(v: Option<String>) -> Result<Option<teal_config::ConfigScope>, String> {
     v.map(|v| {
-        teal_config::ConfigLayer::parse(&v).ok_or_else(|| {
+        teal_config::ConfigScope::parse(&v).ok_or_else(|| {
             format!("unknown configuration layer `{v}`; use install, user, or workspace")
         })
     })
@@ -120,7 +120,7 @@ fn layer(v: Option<String>) -> Result<Option<teal_config::ConfigLayer>, String> 
 fn file(v: Option<String>) -> Result<Option<teal_config::ConfigFile>, String> {
     v.map(|v| {
         teal_config::ConfigFile::parse(&v).ok_or_else(|| {
-            format!("unknown configuration file `{v}`; use config, model, bench, or runtime")
+            format!("unknown configuration file `{v}`; use config, model, bench, runtime, compiler, lint, agent, or observability")
         })
     })
     .transpose()
@@ -132,7 +132,7 @@ fn split(path: String) -> Result<(teal_config::ConfigFile, String), String> {
         ));
     };
     let f = teal_config::ConfigFile::parse(f).ok_or_else(|| {
-        "unknown configuration file; use config, model, bench, or runtime".to_owned()
+        "unknown configuration file; use config, model, bench, runtime, compiler, lint, agent, or observability".to_owned()
     })?;
     if k.is_empty() || k.split('.').any(str::is_empty) {
         return Err(format!("configuration path `{path}` is invalid"));
@@ -176,7 +176,7 @@ fn parse_config(args: Vec<std::ffi::OsString>) -> Result<ConfigCommand, String> 
                 file: f,
                 key: k,
                 value,
-                layer: layer(l)?.unwrap_or(teal_config::ConfigLayer::User),
+                layer: layer(l)?.unwrap_or(teal_config::ConfigScope::User),
                 json,
             })
         }
@@ -185,7 +185,7 @@ fn parse_config(args: Vec<std::ffi::OsString>) -> Result<ConfigCommand, String> 
             Ok(ConfigCommand::Unset {
                 file: f,
                 key: k,
-                layer: layer(l)?.unwrap_or(teal_config::ConfigLayer::User),
+                layer: layer(l)?.unwrap_or(teal_config::ConfigScope::User),
             })
         }
         ConfigBuiltin::Paths { format } => Ok(ConfigCommand::Paths {
@@ -264,11 +264,14 @@ fn parse_perm(args: Vec<std::ffi::OsString>) -> Result<PermissionsCommand, Strin
 
 pub fn require_workspace_trust() -> Result<(), String> {
     let workspace = std::env::current_dir().map_err(|e| e.to_string())?;
-    let effective = teal_config::load(Some(&workspace)).map_err(|e| e.to_string())?;
-    if effective.workspace_trusted() {
+    let effective = teal_security::load(Some(&workspace)).map_err(|e| e.to_string())?;
+    if teal_bench::config::trusted(&effective).map_err(|error| error.to_string())? {
         return Ok(());
     }
-    if effective.trust() == teal_config::TrustLevel::Unknown
+    if teal_bench::config::permissions(&effective)
+        .map_err(|error| error.to_string())?
+        .trust_level
+        == teal_security::TrustLevel::Unknown
         && io::stdin().is_terminal()
         && io::stdout().is_terminal()
     {
@@ -280,8 +283,11 @@ pub fn require_workspace_trust() -> Result<(), String> {
         let mut s = String::new();
         io::stdin().read_line(&mut s).map_err(|e| e.to_string())?;
         if matches!(s.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
-            teal_config::set_workspace_trust(effective.paths(), teal_config::TrustLevel::Trusted)
-                .map_err(|e| e.to_string())?;
+            teal_security::set_workspace_trust(
+                effective.paths(),
+                teal_security::TrustLevel::Trusted,
+            )
+            .map_err(|e| e.to_string())?;
             return Ok(());
         }
     }

@@ -11,6 +11,7 @@ use crossterm::event::{
 use ratatui::{Terminal, backend::TestBackend};
 use tempfile::tempdir;
 
+use crate::workbench::ui::{ClipboardAction, PanelKind, Widget, render_frame};
 use teal_workbench_core::{
     InputEvent, Key, KeyModifiers, KeymapPreset, LayoutTree, MouseButton, MouseEvent,
     MouseEventKind, Selection, SelectionSet, Window, WindowKind, WindowSet,
@@ -18,7 +19,6 @@ use teal_workbench_core::{
 use teal_workbench_services::{
     ClipboardBackend, ClipboardError, PanelSession, SessionState, load_session,
 };
-use crate::workbench::ui::{ClipboardAction, PanelKind, Widget, render_frame};
 
 use super::{
     App, AppOptions, MouseNormalizer, PendingConfirmation, PendingOverlay, SessionRestorePolicy,
@@ -445,7 +445,7 @@ async fn trusted_workspace_toml_config_keeps_the_builtin_default_without_logging
     let paths = teal_config::ConfigPaths::discover(Some(directory.path()))
         .expect("fixture configuration paths should resolve");
     ensure_test_audit();
-    teal_config::set_workspace_trust(&paths, teal_config::TrustLevel::Trusted)
+    teal_security::set_workspace_trust(&paths, teal_security::TrustLevel::Trusted)
         .expect("workspace trust should persist");
     std::fs::write(directory.path().join("coding.tl"), "task main() { }")
         .expect("source Agent application should be written");
@@ -505,7 +505,7 @@ async fn legacy_workspace_agent_config_is_rejected_without_logging_in() {
     let paths = teal_config::ConfigPaths::discover(Some(directory.path()))
         .expect("fixture configuration paths should resolve");
     ensure_test_audit();
-    teal_config::set_workspace_trust(&paths, teal_config::TrustLevel::Trusted)
+    teal_security::set_workspace_trust(&paths, teal_security::TrustLevel::Trusted)
         .expect("workspace trust should persist");
     let workspace_config = directory.path().join(".teal/bench.toml");
     std::fs::create_dir_all(workspace_config.parent().expect("workspace config parent"))

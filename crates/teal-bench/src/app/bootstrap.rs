@@ -112,7 +112,7 @@ impl App {
                 .to_path_buf()
         };
         let unified_config = config_enabled
-            .then(|| teal_config::load(Some(&workspace)))
+            .then(|| teal_security::load(Some(&workspace)))
             .transpose()?;
 
         #[cfg(test)]
@@ -297,9 +297,9 @@ impl App {
         )?);
         let knowledge_config = unified_config
             .as_ref()
-            .map_or_else(teal_config::KnowledgeConfig::default, |config| {
-                config.knowledge().clone()
-            });
+            .map(crate::config::knowledge)
+            .transpose()?
+            .unwrap_or_default();
         let knowledge_options = teal_knowledge::LayerOptions {
             cache: knowledge_config.cache,
             max_files: knowledge_config.max_files,
@@ -307,7 +307,9 @@ impl App {
         };
         let knowledge_trusted = unified_config
             .as_ref()
-            .is_some_and(teal_config::EffectiveConfig::workspace_trusted);
+            .map(crate::config::trusted)
+            .transpose()?
+            .unwrap_or(false);
         let knowledge_home = teal_config::ConfigPaths::discover(Some(&workspace))
             .ok()
             .map(|paths| paths.teal_home);
@@ -320,11 +322,11 @@ impl App {
                         .then(|| {
                             knowledge_home
                                 .as_ref()
-                                .map(|home| knowledge_config.user_layer_root(home))
+                                .map(|home| knowledge_config.user_scope_root(home))
                         })
                         .flatten(),
                     (knowledge_config.enabled && knowledge_trusted)
-                        .then(|| knowledge_config.workspace_layer_root(&workspace)),
+                        .then(|| knowledge_config.workspace_scope_root(&workspace)),
                     knowledge_options,
                 )
                 .map_err(|error| format!("Teal knowledge layers are unavailable: {error}"))?
@@ -518,8 +520,8 @@ impl App {
         for (name, declared) in &config.agent_apps {
             let key = format!("agent_apps.{name}.script");
             let path = resolve_bench_path(&resolved, effective, &key, &declared.script);
-            let kind = match resolved.origin(&key).map(|origin| origin.layer) {
-                Some(teal_config::ConfigLayer::Workspace) => {
+            let kind = match resolved.origin(&key).map(|origin| origin.scope) {
+                Some(teal_config::ConfigScope::Workspace) => {
                     teal_workbench_automation::ScriptKind::WorkspaceConfig
                 }
                 _ => teal_workbench_automation::ScriptKind::UserConfig,
@@ -527,7 +529,7 @@ impl App {
             if path.exists() {
                 let prepared = self.teal.prepare(&path, kind)?;
                 if kind == teal_workbench_automation::ScriptKind::WorkspaceConfig
-                    && effective.workspace_trusted()
+                    && crate::config::trusted(effective)?
                 {
                     self.trust
                         .approve(
@@ -636,7 +638,7 @@ impl App {
                 &effective
                     .paths()
                     .path(
-                        teal_config::ConfigLayer::User,
+                        teal_config::ConfigScope::User,
                         teal_config::ConfigFile::Config,
                     )
                     .unwrap_or_else(|| effective.paths().teal_home.clone()),
@@ -700,9 +702,13 @@ pub(crate) fn ensure_workspace_trust(
     workspace: &std::path::Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::{self, IsTerminal as _};
-    let effective = teal_config::load(Some(workspace))?;
-    if !effective.paths().workspace_has_configuration()
-        || effective.trust() != teal_config::TrustLevel::Unknown
+    let effective = teal_security::load(Some(workspace))?;
+    if !effective
+        .paths()
+        .all_files()
+        .iter()
+        .any(|(scope, _, path)| *scope == teal_config::ConfigScope::Workspace && path.is_file())
+        || crate::config::permissions(&effective)?.trust_level != teal_security::TrustLevel::Unknown
     {
         return Ok(());
     }
@@ -717,11 +723,11 @@ pub(crate) fn ensure_workspace_trust(
     let mut answer = String::new();
     io::stdin().read_line(&mut answer)?;
     let trust = if matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
-        teal_config::TrustLevel::Trusted
+        teal_security::TrustLevel::Trusted
     } else {
-        teal_config::TrustLevel::Untrusted
+        teal_security::TrustLevel::Untrusted
     };
-    teal_config::set_workspace_trust(effective.paths(), trust)?;
+    teal_security::set_workspace_trust(effective.paths(), trust)?;
     Ok(())
 }
 

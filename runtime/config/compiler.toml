@@ -1,0 +1,4 @@
+# 编译默认值；源码、CLI 和宿主可按统一优先级覆盖。
+version = 15
+edition = "2026"
+build_profile = "release"

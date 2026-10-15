@@ -7,8 +7,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-const LOCK_VERSION: u16 = 8;
-const PACKAGE_FORMAT_VERSION: u16 = 5;
+const LOCK_VERSION: u16 = 9;
+const PACKAGE_FORMAT_VERSION: u16 = 7;
 const MAX_LOCK_BYTES: u64 = 1024 * 1024;
 
 /// 在解析具体版本字段前使用的最小锁文件头。
@@ -74,7 +74,7 @@ pub struct RuntimeLock {
     /// 按名称排序的扩展制品。
     pub artifacts: Vec<RuntimeArtifact>,
     /// 编译和执行目标运行时配置档。
-    pub runtime_profile: String,
+    pub tier: String,
     /// 可选的版本化知识快照身份。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub knowledge: Option<RuntimeKnowledge>,
@@ -128,7 +128,7 @@ pub enum RuntimeLockError {
 }
 
 impl RuntimeLock {
-    /// 创建使用 RuntimeProfile 的规范锁文件。
+    /// 创建使用 RuntimeTier 的规范锁文件。
     ///
     /// # Errors
     /// 版本、内置扩展包、制品或配置档无效时返回错误。
@@ -136,7 +136,7 @@ impl RuntimeLock {
         teal_version: impl Into<String>,
         mut packages: Vec<RuntimePackage>,
         mut artifacts: Vec<RuntimeArtifact>,
-        runtime_profile: impl Into<String>,
+        tier: impl Into<String>,
     ) -> Result<Self, RuntimeLockError> {
         artifacts.sort_by(|left, right| left.name.cmp(&right.name));
         packages.sort_by(|left, right| left.name.cmp(&right.name));
@@ -149,7 +149,7 @@ impl RuntimeLock {
             package_format: PACKAGE_FORMAT_VERSION,
             packages,
             artifacts,
-            runtime_profile: runtime_profile.into(),
+            tier: tier.into(),
             knowledge: None,
         };
         lock.validate()?;
@@ -350,10 +350,8 @@ impl RuntimeLock {
                 ));
             }
         }
-        if !valid_name(&self.runtime_profile) {
-            return Err(RuntimeLockError::Invalid(
-                "runtime profile name is invalid".into(),
-            ));
+        if !matches!(self.tier.as_str(), "embedded" | "hosted" | "agentic") {
+            return Err(RuntimeLockError::Invalid("runtime tier is invalid".into()));
         }
         if let Some(knowledge) = &self.knowledge
             && (knowledge.format_version == 0

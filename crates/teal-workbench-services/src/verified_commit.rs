@@ -180,8 +180,7 @@ fn verify_commit_request(
     }
     let script_path = workspace.join(&request.script.path);
     let test_count =
-        crate::compile_test_names_in_workspace(workspace, &script_path, &request.runtime_profile)?
-            .len();
+        crate::compile_test_names_in_workspace(workspace, &script_path, &request.tier)?.len();
     let mut required_names = vec!["teal.fmt_check", "teal.check"];
     if test_count != 0 {
         required_names.push("teal.test");
@@ -234,7 +233,7 @@ fn verify_commit_request(
             continue;
         };
         if field(fact, "program_digest").as_deref() != Some(request.program_digest.as_str())
-            || field(fact, "runtime_profile").as_deref() != Some(request.runtime_profile.as_str())
+            || field(fact, "tier").as_deref() != Some(request.tier.as_str())
         {
             return Err("verification program or profile differs from delivery".into());
         }
@@ -244,7 +243,7 @@ fn verify_commit_request(
         script: to_delivery_artifact(&request.script),
         artifacts: request.artifacts.iter().map(to_delivery_artifact).collect(),
         program_digest: request.program_digest.clone(),
-        runtime_profile: request.runtime_profile.clone(),
+        tier: request.tier.clone(),
         evidence: request
             .verification_ids
             .iter()
@@ -700,14 +699,16 @@ mod tests {
             bytes: bytes.len() as u64,
         };
         let program_digest =
-            crate::compile_digest_in_workspace(root.path(), &path, "native").unwrap();
+            crate::compile_digest_in_workspace(root.path(), &path, "hosted").unwrap();
         let compiled = teal::compile_source(
             teal::Source::new("stored.tl", "fn main() {}"),
             &teal::FsSourceLoader,
-            teal::CompileOptions::default().with_runtime_profile(teal::RuntimeProfile::agent()),
+            teal::CompileOptions::default().with_tier(teal::RuntimeTier::Agentic),
         )
         .unwrap();
-        let program = teal_agent::AgentProgram::from_compiled(&compiled).unwrap();
+        let program =
+            teal_agent::AgentProgram::from_shared_bytes(compiled.serialized_bytes().unwrap())
+                .unwrap();
         let store = Arc::new(teal_agent::RuntimeStore::open(root.path()).unwrap());
         let run = store.create_run(&program).unwrap();
         let mut history = Vec::new();
@@ -717,12 +718,12 @@ mod tests {
             .enumerate()
         {
             let id = format!("call-{index}");
-            let arguments = serde_json::json!({"path":"main.tl", "runtime_profile":"native"});
+            let arguments = serde_json::json!({"path":"main.tl", "tier":"hosted"});
             let value = serde_json::json!({
                 "path":"main.tl", "exit_code":0,
                 "source_digest":script.sha256,
                 "program_digest":program_digest,
-                "runtime_profile":"native",
+                "tier":"hosted",
             });
             history.push(ModelMessage::Assistant {
                 items: vec![ContentItem::ToolCall(ToolCall {
@@ -757,9 +758,11 @@ mod tests {
         let verifier = teal::compile_source(
             teal::Source::new("verify.tl", r#"
                 import "agents/delivery.tl" as delivery;
-                agent Verifier {}
+                @model("test-provider", "test-model", "default") agent Verifier {}
                 impl Verifier {
-                    pub task check() -> string {
+                    // 此回归只复核已完成的模型证据，不调用 provider。
+                    pub task model_turn(prompt: string) -> string { return self.chat(prompt).await; }
+                    pub task check() -> string | Error {
                         let candidate = delivery::TaskDelivery {
                             summary: "done", script: "main.tl", artifacts: [],
                             verification: [
@@ -769,18 +772,28 @@ mod tests {
                                 delivery::VerificationReference { call_id: "call-3", claim: "run" },
                             ],
                         };
-                        match delivery::verify(candidate, "task").await {
+                        let verified = delivery::verify(candidate, "task").await?;
+                        match verified {
                             delivery::Validation.accepted { receipt } => { return receipt.program_digest; }
                             delivery::Validation.rejected { reason } => { return "rejected: " + reason; }
                         }
                     }
                 }
-                task main() { let verifier = Verifier {}; print(verifier.check().await); }
+                task main() -> int {
+                    let verifier = Verifier {};
+                    let result = verifier.check().await;
+                    match result {
+                        Error { .. } => { print(result.message); return 1; }
+                        _ => { print(result); return 0; }
+                    }
+                }
             "#),
             &teal::FsSourceLoader,
-            teal::CompileOptions::default().with_runtime_profile(teal::RuntimeProfile::agent()),
+            teal::CompileOptions::default().with_tier(teal::RuntimeTier::Agentic),
         ).unwrap();
-        let verifier = teal_agent::AgentProgram::from_compiled(&verifier).unwrap();
+        let verifier =
+            teal_agent::AgentProgram::from_shared_bytes(verifier.serialized_bytes().unwrap())
+                .unwrap();
         let verifier_program = verifier.clone();
         let verifier_run = store.create_run(&verifier).unwrap();
         store
@@ -818,10 +831,7 @@ mod tests {
         .with_services(services)
         .unwrap();
         let mut host = teal::NativeHostRuntime::builder()
-            .trusted()
-            .trusted()
-            .trusted()
-            .trusted()
+            .audit_context(teal_security::process_context())
             .console(true)
             .build()
             .unwrap();
@@ -865,7 +875,7 @@ mod tests {
             script,
             artifacts: Vec::new(),
             program_digest,
-            runtime_profile: "native".into(),
+            tier: "hosted".into(),
             verification_ids: ids,
             approval_id: request.id,
         };
@@ -919,10 +929,7 @@ mod tests {
         .with_services(verifier_services)
         .unwrap();
         let mut stale_host = teal::NativeHostRuntime::builder()
-            .trusted()
-            .trusted()
-            .trusted()
-            .trusted()
+            .audit_context(teal_security::process_context())
             .console(true)
             .build()
             .unwrap();

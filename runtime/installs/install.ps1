@@ -1,5 +1,6 @@
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory = $true)][string]$LanguageRoot,
     [string]$InstallDir = '',
     [switch]$NoPath
 )
@@ -20,7 +21,12 @@ $script:ExecutableNames = @(
     'teal-knowledge.exe',
     'teal-fmt.exe',
     'teal-lsp.exe',
-    'teal-dap.exe'
+    'teal-dap.exe',
+    'teal-c.exe',
+    'teal-test.exe',
+    'teal-auth.exe',
+    'teal-model.exe',
+    'teal-audit.exe'
 )
 
 function Get-NormalizedPath {
@@ -538,14 +544,19 @@ function Install-Teal {
         }
         $script:InstallDir = Join-Path (Join-Path $env:LOCALAPPDATA 'Programs') 'Teal'
     }
+    $languageRoot = Get-NormalizedPath $script:LanguageRoot
+    if (-not (Test-Path -LiteralPath (Join-Path $languageRoot 'Cargo.toml'))) {
+        throw "LanguageRoot must point to a clean teal-lang checkout: $languageRoot"
+    }
     $installRoot = Get-NormalizedPath $script:InstallDir
     Assert-SafeInstallPath $installRoot $sourceRoot
+    Assert-SafeInstallPath $installRoot $languageRoot
 
     $cargo = Get-Command 'cargo' -CommandType Application -ErrorAction Stop
     $identity = Get-SourceBuildIdentity $cargo $sourceRoot
     $buildStarted = [DateTime]::UtcNow
     Write-Host "Building Teal $($identity.version) from $sourceRoot"
-    Invoke-Cargo $cargo $sourceRoot @('run', '--locked', '--package', 'teal-xtask', '--', 'dist')
+    Invoke-Cargo $cargo $sourceRoot @('run', '--locked', '--package', 'teal-xtask', '--', 'dist', '--language-root', $languageRoot)
 
     $bundleName = "teal-$($identity.version)-$($identity.host)"
     $bundleRoot = Get-NormalizedPath (Join-Path $sourceRoot (Join-Path 'target\dist' $bundleName))

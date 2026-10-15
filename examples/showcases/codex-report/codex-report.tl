@@ -1,6 +1,6 @@
 @edition("2026");
+@lint { allow: ["unused-pure-result"] };
 
-import "std/error.tl" as errors;
 import "std/fs.tl" as fs;
 
 // 将已准备的 Git 证据转换为持久且受证据约束的更新报告。
@@ -21,43 +21,28 @@ impl UpdateSummarizer {
         options.max_output_tokens = 8192;
         options.timeout_ms = 600000;
         options.propose_memory = false;
-        return self.think(
-            "Write concise release notes in Simplified Chinese from the supplied Git evidence. " +
-            "Return Markdown only without a top-level heading. Organize supported claims into sections for new features, " +
-            "experience improvements, reliability and security, engineering maintenance and removals, and items worth attention. " +
-            "Use 8 to 15 thematic bullets total and stay under about 1200 Chinese characters; never enumerate every commit. " +
-            "Omit empty sections. Distinguish additions from fixes and removals. Do not invent APIs, behavior, or motivation. " +
-            "When commit subjects are ambiguous, state the uncertainty. Do not use external tools. End with a short direct answer " +
-            "to what functionality this update added. Submit the complete Markdown through __teal_complete alone.\n\n" + evidence,
-            options,
-        ).await;
+        return self.think("Write concise release notes in Simplified Chinese from the supplied Git evidence. " + "Return Markdown only without a top-level heading. Organize supported claims into sections for new features, " + "experience improvements, reliability and security, engineering maintenance and removals, and items worth attention. " + "Use 8 to 15 thematic bullets total and stay under about 1200 Chinese characters; never enumerate every commit. " + "Omit empty sections. Distinguish additions from fixes and removals. Do not invent APIs, behavior, or motivation. " + "When commit subjects are ambiguous, state the uncertainty. Do not use external tools. End with a short direct answer " + "to what functionality this update added. Submit the complete Markdown through __teal_complete alone.\n\n" + evidence, options,).await;
     }
 }
 
-@allow("unused-pure-result")
-task write_failure(generated_at: string, error: string) {
-    let report = "# Codex Update Report\n\n" +
-        "- Status: failed\n" +
-        "- Checked at (UTC): " + generated_at + "\n" +
-        "- Repository: `E:\\codex`\n\n" +
-        "## Failure\n\n```text\n" + error.replace("```", "` ` `") + "\n```\n";
-    fs::write_or_throw(report_path, report).await;
+task write_failure(generated_at: string, error: string) -> none | Error {
+    let report = "# Codex Update Report\n\n" + "- Status: failed\n" + "- Checked at (UTC): " + generated_at + "\n" + "- Repository: `E:\\codex`\n\n" + "## Failure\n\n```text\n" + error.replace("```", "` ` `") + "\n```\n";
+    fs::write(report_path, report).await ?;
 }
 
-@allow("unused-pure-result")
-task build_report(generated_at: string) {
-    if !fs::exists_or_throw(pending_path).await {
-        throw(errors::make("runtime", "Prepared Git evidence is missing", errors::ErrorOrigin.user, false));
+task build_report(generated_at: string) -> none | Error {
+    if !fs::exists(pending_path).await ? {
+        return Error::make("runtime", "Prepared Git evidence is missing", ErrorOrigin.user, false);
     }
 
-    let pending = fs::read_or_throw(pending_path).await;
+    let pending = fs::read(pending_path).await ?;
     let sections = pending.split("\n---EVIDENCE---\n");
     if sections.len() != 2 {
-        throw(errors::make("runtime", "Prepared Git evidence has an invalid envelope", errors::ErrorOrigin.user, false));
+        return Error::make("runtime", "Prepared Git evidence has an invalid envelope", ErrorOrigin.user, false);
     }
     let metadata = sections[0].split("\n");
     if metadata.len() != 4 {
-        throw(errors::make("runtime", "Prepared Git evidence has invalid metadata", errors::ErrorOrigin.user, false));
+        return Error::make("runtime", "Prepared Git evidence has invalid metadata", ErrorOrigin.user, false);
     }
 
     let baseline = metadata[0];
@@ -67,32 +52,30 @@ task build_report(generated_at: string) {
     let summarizer = UpdateSummarizer {};
     let summary = summarizer.summarize(sections[1]).await.trim();
     if summary == "" {
-        throw(errors::make("runtime", "Agent returned an empty summary", errors::ErrorOrigin.user, false));
+        return Error::make("runtime", "Agent returned an empty summary", ErrorOrigin.user, false);
     }
 
-    let report = "# Codex Update Report\n\n" +
-        "- Status: updated\n" +
-        "- Generated at (UTC): " + generated_at + "\n" +
-        "- Repository: `E:\\codex`\n" +
-        "- Branch: `main`\n" +
-        "- Previous commit: `" + baseline + "`\n" +
-        "- Current commit: `" + current + "`\n" +
-        "- Commits analyzed: " + commit_count + "\n" +
-        "- Diff summary: " + short_stat + "\n\n" + summary + "\n";
+    let report = "# Codex Update Report\n\n" + "- Status: updated\n" + "- Generated at (UTC): " + generated_at + "\n" + "- Repository: `E:\\codex`\n" + "- Branch: `main`\n" + "- Previous commit: `" + baseline + "`\n" + "- Current commit: `" + current + "`\n" + "- Commits analyzed: " + commit_count + "\n" + "- Diff summary: " + short_stat + "\n\n" + summary + "\n";
 
-    fs::write_or_throw(report_path, report).await;
-    fs::write_or_throw(state_path, current + "\n").await;
+    fs::write(report_path, report).await ?;
+    fs::write(state_path, current + "\n").await ?;
 }
 
-@allow("unused-pure-result")
 task main() -> int {
     let generated_at = system::utc_now();
-    try {
-        build_report(generated_at).await;
-        return 0;
-    } catch error {
-        write_failure(generated_at, error).await;
-        print(error);
-        return 1;
+    let result = build_report(generated_at).await;
+    match result {
+        Error { .. } => {
+            let recorded = write_failure(generated_at, result.message).await;
+            match recorded {
+                Error { .. } => {
+                    print(recorded.message);
+                } _ => {}
+            }
+            print(result.message);
+            return 1;
+        } _ => {
+            return 0;
+        }
     }
 }

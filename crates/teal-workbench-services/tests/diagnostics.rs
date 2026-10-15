@@ -101,7 +101,7 @@ fn diagnostic_context_prefers_shared_overlay_and_reports_git_or_uncommitted_prov
     git(workspace.path(), &["commit", "-m", "diagnostic source"]);
 
     let span = DiagnosticSpan {
-        file: "src\\lib.tl".into(),
+        file: "src/lib.tl".into(),
         byte_start: 0,
         byte_end: 1,
         line: 5,
