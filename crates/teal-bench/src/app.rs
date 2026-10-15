@@ -845,9 +845,8 @@ impl App {
 
 fn mutation_text(current: &str, kind: MutationKind) -> Result<String, String> {
     match kind {
-        MutationKind::Write(content) | MutationKind::WriteNew(content) => {
-            Ok(content.replace("\r\n", "\n").replace('\r', "\n"))
-        }
+        MutationKind::WriteNew { text, .. } => Ok(text),
+        MutationKind::Write(content) => Ok(content.replace("\r\n", "\n").replace('\r', "\n")),
         MutationKind::Replace { old, new } => {
             let old = old.replace("\r\n", "\n").replace('\r', "\n");
             let new = new.replace("\r\n", "\n").replace('\r', "\n");

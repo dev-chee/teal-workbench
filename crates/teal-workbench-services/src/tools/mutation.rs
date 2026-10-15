@@ -7,7 +7,12 @@ pub enum MutationKind {
     Write(String),
 
     /// 仅当目标目录项仍不存在时创建完整文本文件。
-    WriteNew(String),
+    WriteNew {
+        /// 待写入的完整文本。
+        text: String,
+        /// 等待批准及入队前固定的目录身份与不存在性证明。
+        target: Box<teal_workbench_core::ResolvedTarget>,
+    },
 
     /// 替换一次精确匹配。
     Replace {

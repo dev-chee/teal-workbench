@@ -49,20 +49,8 @@ agent Assistant {
 
 impl Assistant {
     pub task submit(input: string) -> string | Error {
-        if input.starts_with(":model ") {
-            let model = input.replace(":model ", "").trim();
-            if self.can_set_default_model() {
-                self.set_default_model(model).await ?;
-            }
-            if self.task_state == "running" || self.task_state == "needs_revision" {
-                self.task_state = "abandoned";
-                self.task_session = "";
-                self.last_delivery = none;
-                self.last_receipt = none;
-            }
-            self.generation += 1;
-            self.session_key = "chat-" + string(self.generation);
-            return "Model selected for a new session: " + model;
+        if input == ":model" || input.starts_with(":model ") {
+            return "Model bindings are frozen for this run. Finish this run with :quit before selecting a model for a new run.";
         }
         if input == ":plan" || input == ":plan show" {
             if self.plan == "" {

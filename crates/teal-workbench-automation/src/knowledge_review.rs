@@ -7,7 +7,7 @@ use teal::HostExecutionGrant as ExecutionGrant;
 use teal_agent::{
     ActionContext, ActionResourceAccess, ActionSpec, AgentRuntimeError, Decision, ModelToolState,
     PermissionProvider, ResourceVersion, RootBudgetLimits, RuntimeServices, RuntimeStore,
-    UserAnswer, UserQuestion, WorkspaceTransactionProvider,
+    UserAnswer, UserQuestion,
 };
 use teal_knowledge::{
     KnowledgeProposal, KnowledgeProposalStore, KnowledgeStore, ProposalReview, ProposalStatus,
@@ -334,10 +334,20 @@ fn looks_sensitive(value: &str) -> bool {
     .any(|pattern| lower.contains(pattern))
 }
 
+/// 接收批准前路径证明的工作台发布回调；结果仍遵循语言侧编辑回执契约。
+pub type WorkspacePublication<'a> = dyn Fn(
+        teal_workbench_core::ResolvedTarget,
+        String,
+    ) -> teal_agent::ProviderFuture<
+        Result<teal_agent::WorkspaceEditReceipt, teal_agent::AgentError>,
+    > + Send
+    + Sync
+    + 'a;
+
 /// 受工作台共享事务或 CLI 原子文档写入边界约束的发布端口。
 pub enum KnowledgePublicationWriter<'a> {
     /// 工作台共享编辑事务；目标必须不存在。
-    Workspace(&'a dyn WorkspaceTransactionProvider),
+    Workspace(&'a WorkspacePublication<'a>),
     /// CLI 直接写入当前已验证的工作区知识层。
     Headless(&'a KnowledgeStore),
 }
@@ -744,19 +754,20 @@ pub async fn publish_approved_knowledge(
             .map_err(|error| KnowledgePublicationError::Stale(error.to_string()))
     } else {
         match writer {
-            KnowledgePublicationWriter::Workspace(transaction) => transaction
-                .create_new(receipt.path.clone(), text)
-                .await
-                .map_err(|error| KnowledgePublicationError::Unknown(error.to_string()))
-                .and_then(|written| {
-                    if written.after_sha256 == digest && Path::new(&written.path) == target {
-                        Ok(())
-                    } else {
-                        Err(KnowledgePublicationError::Unknown(
-                            "workspace receipt digest differs from written content".into(),
-                        ))
-                    }
-                }),
+            KnowledgePublicationWriter::Workspace(transaction) => {
+                transaction(prepared_target, text)
+                    .await
+                    .map_err(|error| KnowledgePublicationError::Unknown(error.to_string()))
+                    .and_then(|written| {
+                        if written.after_sha256 == digest && Path::new(&written.path) == target {
+                            Ok(())
+                        } else {
+                            Err(KnowledgePublicationError::Unknown(
+                                "workspace receipt digest differs from written content".into(),
+                            ))
+                        }
+                    })
+            }
             KnowledgePublicationWriter::Headless(_) => coordinator
                 .create_new_resolved(
                     &teal_workbench_core::BufferStore::default(),
@@ -1061,6 +1072,57 @@ mod tests {
         (source, proposal)
     }
 
+    #[test]
+    fn review_source_binds_its_named_profile_without_a_default() {
+        let compiled = teal::compile_source(
+            teal::Source::new(
+                "runtime/agents/knowledge-review.tl",
+                include_str!("../../../runtime/agents/knowledge-review.tl"),
+            ),
+            &teal::FsSourceLoader,
+            teal::CompileOptions::default().with_tier(teal::RuntimeTier::Agentic),
+        )
+        .unwrap();
+        let program =
+            teal_agent::AgentProgram::from_shared_bytes(compiled.serialized_bytes().unwrap())
+                .unwrap();
+        let mut doc = teal_model::ModelDocument::empty();
+        for (name, provider, model) in [
+            ("primary", "main-provider", "main-model"),
+            ("knowledge-review", "review-provider", "review-model"),
+        ] {
+            let provider_id = teal_model::ProviderId::new(provider).unwrap();
+            let auth = teal_model::AuthProfileName::new("default").unwrap();
+            let model_id = teal_model::ModelId::new(model).unwrap();
+            doc.profiles.insert(
+                teal_model::ProfileName::new(name).unwrap(),
+                teal_model::ProfileConfig {
+                    provider: provider_id.clone(),
+                    auth_profile: auth.clone(),
+                    model: model_id.clone(),
+                },
+            );
+            let provider = doc.providers.entry(provider_id).or_default();
+            provider
+                .auth_profiles
+                .insert(auth, teal_model::AuthProfileConfig::default());
+            provider
+                .models
+                .insert(model_id, teal_model::ModelConfig::default());
+        }
+        doc.default = Some(teal_model::ProfileName::new("primary").unwrap());
+        doc.validate().unwrap();
+        for default in [Some(teal_model::ProfileName::new("primary").unwrap()), None] {
+            doc.default = default;
+            let bindings = program
+                .resolve_model_bindings(&teal::ExecutionBindings::default(), &doc)
+                .unwrap();
+            let selected = &bindings.source_agents["KnowledgeReviewer"];
+            assert_eq!(selected.provider.to_string(), "review-provider");
+            assert_eq!(selected.model.to_string(), "review-model");
+        }
+    }
+
     #[tokio::test]
     async fn approved_proposal_publishes_once_and_never_overwrites_a_conflict() {
         let directory = tempfile::tempdir().unwrap();
@@ -1095,6 +1157,88 @@ mod tests {
             &root,
             &teal_agent::AllowAllPermissions,
             KnowledgePublicationWriter::Headless(&knowledge),
+            audit(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            proposals.get(&created.id).unwrap().unwrap().status,
+            ProposalStatus::Published
+        );
+        let published = workspace.join(&receipt.path);
+        assert!(published.is_file());
+        let before = std::fs::read(&published).unwrap();
+        assert!(
+            knowledge
+                .create_named(&format!("agent-{}", &created.id[..16]), b"different")
+                .is_err()
+        );
+        assert_eq!(std::fs::read(&published).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn workspace_publication_consumes_the_approved_target_proof() {
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory.path();
+        let root = workspace.join(".teal/knowledge");
+        let proposals =
+            KnowledgeProposalStore::open_with_audit(&workspace.join("proposals.db"), audit())
+                .unwrap();
+        let (source, created) = verified_proposal(workspace, &proposals);
+        let packet = build_knowledge_review_packet(&source, &created, None).unwrap();
+        assert!(packet.contains(&created.source_refs[0]));
+        assert!(proposals.claim_review(&created.id).unwrap());
+        assert!(
+            proposals
+                .record_review(
+                    &created.id,
+                    ProposalReview::Approve {
+                        cited_refs: created.source_refs.clone(),
+                    }
+                )
+                .unwrap()
+        );
+        let approved = proposals.get(&created.id).unwrap().unwrap();
+        let knowledge =
+            KnowledgeStore::open(&root, KnowledgeScope::Project, LayerOptions::default())
+                .unwrap()
+                .with_audit_context(audit());
+        let coordinator = Arc::new(
+            teal_workbench_core::WorkspaceMutationCoordinator::new(
+                workspace.into(),
+                workspace.join("checkpoints"),
+            )
+            .unwrap()
+            .with_audit_context(audit()),
+        );
+        let writer = move |target: teal_workbench_core::ResolvedTarget,
+                           text: String|
+              -> teal_agent::ProviderFuture<_> {
+            let coordinator = Arc::clone(&coordinator);
+            Box::pin(async move {
+                let path = target.path().to_string_lossy().into_owned();
+                let after_sha256 = format!("{:x}", Sha256::digest(text.as_bytes()));
+                coordinator
+                    .create_new_resolved(
+                        &teal_workbench_core::BufferStore::default(),
+                        target,
+                        &text,
+                    )
+                    .map_err(teal_agent::AgentError::Protocol)?;
+                Ok(teal_agent::WorkspaceEditReceipt {
+                    path,
+                    before_sha256: String::new(),
+                    after_sha256,
+                })
+            })
+        };
+        let receipt = publish_approved_knowledge(
+            &proposals,
+            &approved,
+            workspace,
+            &root,
+            &teal_agent::AllowAllPermissions,
+            KnowledgePublicationWriter::Workspace(&writer),
             audit(),
         )
         .await

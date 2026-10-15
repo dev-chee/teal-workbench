@@ -900,7 +900,7 @@ fn grant(
         g = allow_application_resource(g, teal::ResourceAccess::Read, "computer");
     }
     if package.operations.contains("computer.interact")
-        || package.operations.contains("computer.raw_input")
+        || package.operations.contains("computer.raw-input")
     {
         g = allow_application_resource(g, teal::ResourceAccess::Write, "computer");
     }
@@ -965,4 +965,38 @@ fn artifact_receipt(workspace: &Path, path: &str) -> Result<ArtifactReceipt, Str
 }
 fn err(error: impl std::fmt::Display) -> String {
     error.to_string()
+}
+
+#[cfg(test)]
+mod grant_tests {
+    use super::*;
+
+    #[test]
+    fn raw_input_permission_grants_computer_write_without_interact() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("extension.toml"),
+            r#"id = "raw-input"
+version = "1"
+api_version = 1
+"#,
+        )
+        .unwrap();
+        let runtime = teal_workbench_automation::WorkbenchAutomationRuntime::new(
+            root.path().join("runtime-state"),
+        )
+        .unwrap();
+        let mut package = WorkbenchPluginPackage::load(root.path(), &runtime).unwrap();
+        package.operations = ["computer.inspect".into(), "computer.raw-input".into()].into();
+        let granted = grant(&package, "", false, root.path());
+        let resource = teal::HostResource::Application {
+            namespace: "computer".into(),
+            identity: "fixture-window".into(),
+        };
+        assert!(granted.allows_resource(teal::ResourceAccess::Read, &resource));
+        assert!(granted.allows_resource(teal::ResourceAccess::Write, &resource));
+        package.operations.remove("computer.raw-input");
+        let inspect_only = grant(&package, "", false, root.path());
+        assert!(!inspect_only.allows_resource(teal::ResourceAccess::Write, &resource));
+    }
 }

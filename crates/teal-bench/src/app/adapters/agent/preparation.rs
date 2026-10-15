@@ -336,13 +336,17 @@ impl App {
         self.apply_model_selection(&selection, profile, pending.pending_request);
     }
 
-    /// 将固定的 provider/model/auth 选择写入默认预设并绑定当前 Agent。
+    /// 在没有未结束源码运行时保存 provider/model/auth，供下一次运行冻结绑定。
     fn apply_model_selection(
         &mut self,
         selection: &teal_model::AvailableModel,
         model_profile: teal_model::ProfileName,
         pending_request: Option<String>,
     ) {
+        if let Err(error) = self.ensure_model_selection_available() {
+            self.message(Severity::Warning, "agent", error);
+            return;
+        }
         let snapshot = match self.model_access.configuration() {
             Ok(snapshot) => snapshot,
             Err(error) => {
@@ -576,6 +580,10 @@ impl App {
 
     /// 根据用户显式选择更新用户总体配置，不接收或写入任何秘密。
     pub(in crate::app) fn setup_agent(&mut self, arguments: &[String]) {
+        if let Err(error) = self.ensure_model_selection_available() {
+            self.message(Severity::Warning, "agent", error);
+            return;
+        }
         let [provider, profile, model, model_profile] = arguments else {
             self.message(
                 Severity::Error,
@@ -632,7 +640,6 @@ impl App {
             return;
         }
         self.active_agent = Some("default".into());
-        self.submit_source_agent_input(format!(":model {model_profile}/{model}"));
         let path = paths
             .path(
                 teal_config::ConfigScope::User,

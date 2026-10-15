@@ -112,7 +112,8 @@ Debug 控制台按工作台命令执行，`!` 前缀同样执行宿主命令。
 
 ### 2.7 Agent、运行时与调试
 
-- `:agent-setup <provider> <auth-profile> <model> <model-profile>` 更新用户层默认模型 profile，并把选择送给 Teal Agent 程序；`bench.toml` 不保存 Agent 指令。provider/model 必须已在 `model.toml` 声明，认证由独立的 `teal auth login <provider> --profile <auth-profile>` 完成。
+- `:agent-setup <provider> <auth-profile> <model> <model-profile>` 在没有未结束源码运行时更新用户层默认模型 profile，下一次运行使用此选择；`bench.toml` 不保存 Agent 指令。provider/model 必须已在 `model.toml` 声明，认证由独立的 `teal auth login <provider> --profile <auth-profile>` 完成。
+- 模型绑定在运行准备时冻结。模型选择器和 `:agent-setup` 会拒绝修改未结束的源码运行，包括重新打开工作台后尚待恢复的运行。先用 `:quit` 结束运行，再选择模型；Agent 输入中的 `:model` 只返回拒绝说明，不改变运行或模型配置。
 - 工作台缺少默认模型时按“供应商 → 认证资料 → 模型”选择；已有完全匹配的模型 profile 会直接复用，没有匹配项时要求输入新的 model profile 名称。
 - `:diff [PATH]` 打开 Diff 窗口，比较磁盘内容与打开缓冲区（默认取聚焦缓冲区，也可显式给出工作区内路径）：
 输出带 `---`/`+++` 头、`+`/`-`/` ` 前缀与增删行数汇总，完全一致时明确说明没有差异。路径必须位于

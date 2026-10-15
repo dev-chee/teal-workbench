@@ -82,8 +82,11 @@ fn apply_mutation(
     }
     let buffers = BufferStore::default();
     match &request.kind {
-        MutationKind::WriteNew(text) => {
-            coordinator.create_new_text(&buffers, &request.path, text, true)
+        MutationKind::WriteNew { text, target } => {
+            if target.path() != request.path {
+                return Err("workspace creation path differs from its prepared target".into());
+            }
+            coordinator.create_new_resolved(&buffers, target.as_ref().clone(), text)
         }
         MutationKind::CreateDirectory => coordinator.execute(
             &buffers,
@@ -249,7 +252,10 @@ mod tests {
         let request = MutationRequest {
             observation: crate::tracing_context::Context::current(),
             path: path.clone(),
-            kind: MutationKind::WriteNew("first".into()),
+            kind: MutationKind::WriteNew {
+                text: "first".into(),
+                target: Box::new(coordinator.resolve_write(&path, true).unwrap()),
+            },
             expected_buffer_version: None,
             expected_content_sha256: None,
             response,
@@ -257,6 +263,95 @@ mod tests {
         apply_mutation(&workspace, &coordinator, &request).unwrap();
         assert!(apply_mutation(&workspace, &coordinator, &request).is_err());
         assert_eq!(std::fs::read_to_string(path).unwrap(), "first");
+    }
+
+    #[tokio::test]
+    async fn public_create_new_keeps_its_target_proof_across_the_queue() {
+        use teal_agent::WorkspaceTransactionProvider;
+        let root = tempfile::tempdir().unwrap();
+        let (mutations, mut requests) = mpsc::channel(8);
+        let (changesets, _) = mpsc::channel(8);
+        let runtime = Arc::new(
+            WorkspaceToolRuntime::new(
+                root.path(),
+                root.path().join("checkpoints"),
+                mutations,
+                changesets,
+                teal_lsp_client::DiagnosticStore::default(),
+            )
+            .unwrap(),
+        );
+        let workspace = Workspace::open(root.path()).unwrap();
+        let coordinator = WorkspaceMutationCoordinator::new(
+            root.path().to_owned(),
+            root.path().join("checkpoints"),
+        )
+        .unwrap()
+        .with_audit_context(teal_security::AuditContext::new(Arc::new(AuditSink)));
+        let creation = tokio::spawn(runtime.create_new(
+            "nested/deeper/note.md".into(),
+            "first\r\nsecond\rthird".into(),
+        ));
+        let request = tokio::time::timeout(std::time::Duration::from_secs(3), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let path = request.path.clone();
+        let result = apply_mutation(&workspace, &coordinator, &request);
+        request.response.send(result).unwrap();
+        let receipt = creation.await.unwrap().unwrap();
+        assert_eq!(receipt.path, path.to_string_lossy());
+        assert_eq!(
+            receipt.after_sha256,
+            crate::agent_algorithms::digest(b"first\r\nsecond\rthird")
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "first\r\nsecond\rthird"
+        );
+        assert!(
+            runtime
+                .create_new("nested/deeper/note.md".into(), "overwrite".into())
+                .await
+                .is_err()
+        );
+        assert!(requests.try_recv().is_err());
+
+        let creation =
+            tokio::spawn(runtime.create_new("nested/deeper/other.md".into(), "secret".into()));
+        let request = tokio::time::timeout(std::time::Duration::from_secs(3), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        std::fs::rename(root.path().join("nested"), root.path().join("old-parent")).unwrap();
+        std::fs::create_dir_all(root.path().join("nested/deeper")).unwrap();
+        let result = apply_mutation(&workspace, &coordinator, &request);
+        assert!(result.is_err());
+        request.response.send(result).unwrap();
+        assert!(creation.await.unwrap().is_err());
+        assert!(!root.path().join("nested/deeper/other.md").exists());
+        assert!(!root.path().join("old-parent/deeper/other.md").exists());
+        #[cfg(unix)]
+        {
+            let outside = tempfile::tempdir().unwrap();
+            let creation =
+                tokio::spawn(runtime.create_new("nested/deeper/escape.md".into(), "secret".into()));
+            let request = tokio::time::timeout(std::time::Duration::from_secs(3), requests.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            std::fs::rename(
+                root.path().join("nested"),
+                root.path().join("second-parent"),
+            )
+            .unwrap();
+            std::os::unix::fs::symlink(outside.path(), root.path().join("nested")).unwrap();
+            let result = apply_mutation(&workspace, &coordinator, &request);
+            assert!(result.is_err());
+            request.response.send(result).unwrap();
+            assert!(creation.await.unwrap().is_err());
+            assert!(!outside.path().join("deeper").exists());
+        }
     }
 
     #[test]

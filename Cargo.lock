@@ -5098,7 +5098,7 @@ dependencies = [
 [[package]]
 name = "teal-abi"
 version = "0.1.0"
-source = "git+https://github.com/dev-chee/teal-lang.git?rev=963595f494a1dd1cf86b591cc12f8d3162325f1d#963595f494a1dd1cf86b591cc12f8d3162325f1d"
+source = "git+https://github.com/dev-chee/teal-lang.git?rev=ee70036f4bbf917ff686a3b77f551cea649315ad#ee70036f4bbf917ff686a3b77f551cea649315ad"
 dependencies = [
  "bincode",
  "crc32fast",
@@ -5112,7 +5112,7 @@ dependencies = [
 [[package]]
 name = "teal-agent"
 version = "0.1.0"
-source = "git+https://github.com/dev-chee/teal-lang.git?rev=963595f494a1dd1cf86b591cc12f8d3162325f1d#963595f494a1dd1cf86b591cc12f8d3162325f1d"
+source = "git+https://github.com/dev-chee/teal-lang.git?rev=ee70036f4bbf917ff686a3b77f551cea649315ad#ee70036f4bbf917ff686a3b77f551cea649315ad"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -5178,7 +5178,7 @@ dependencies = [
 [[package]]
 name = "teal-compiler"
 version = "0.1.0"
-source = "git+https://github.com/dev-chee/teal-lang.git?rev=963595f494a1dd1cf86b591cc12f8d3162325f1d#963595f494a1dd1cf86b591cc12f8d3162325f1d"
+source = "git+https://github.com/dev-chee/teal-lang.git?rev=ee70036f4bbf917ff686a3b77f551cea649315ad#ee70036f4bbf917ff686a3b77f551cea649315ad"
 dependencies = [
  "bincode",
  "chumsky",
@@ -5198,7 +5198,7 @@ dependencies = [
 [[package]]
 name = "teal-config"
 version = "0.1.0"
-source = "git+https://github.com/dev-chee/teal-lang.git?rev=963595f494a1dd1cf86b591cc12f8d3162325f1d#963595f494a1dd1cf86b591cc12f8d3162325f1d"
+source = "git+https://github.com/dev-chee/teal-lang.git?rev=ee70036f4bbf917ff686a3b77f551cea649315ad#ee70036f4bbf917ff686a3b77f551cea649315ad"
 dependencies = [
  "serde",
  "serde_json",
@@ -5214,7 +5214,7 @@ dependencies = [
 [[package]]
 name = "teal-host"
 version = "0.1.0"
-source = "git+https://github.com/dev-chee/teal-lang.git?rev=963595f494a1dd1cf86b591cc12f8d3162325f1d#963595f494a1dd1cf86b591cc12f8d3162325f1d"
+source = "git+https://github.com/dev-chee/teal-lang.git?rev=ee70036f4bbf917ff686a3b77f551cea649315ad#ee70036f4bbf917ff686a3b77f551cea649315ad"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -5248,7 +5248,7 @@ dependencies = [
 [[package]]
 name = "teal-knowledge"
 version = "0.1.0"
-source = "git+https://github.com/dev-chee/teal-lang.git?rev=963595f494a1dd1cf86b591cc12f8d3162325f1d#963595f494a1dd1cf86b591cc12f8d3162325f1d"
+source = "git+https://github.com/dev-chee/teal-lang.git?rev=ee70036f4bbf917ff686a3b77f551cea649315ad#ee70036f4bbf917ff686a3b77f551cea649315ad"
 dependencies = [
  "bincode",
  "rusqlite",
@@ -5283,7 +5283,7 @@ dependencies = [
 [[package]]
 name = "teal-model"
 version = "0.1.0"
-source = "git+https://github.com/dev-chee/teal-lang.git?rev=963595f494a1dd1cf86b591cc12f8d3162325f1d#963595f494a1dd1cf86b591cc12f8d3162325f1d"
+source = "git+https://github.com/dev-chee/teal-lang.git?rev=ee70036f4bbf917ff686a3b77f551cea649315ad#ee70036f4bbf917ff686a3b77f551cea649315ad"
 dependencies = [
  "age",
  "base64 0.22.1",
@@ -5314,7 +5314,7 @@ dependencies = [
 [[package]]
 name = "teal-packages"
 version = "0.1.0"
-source = "git+https://github.com/dev-chee/teal-lang.git?rev=963595f494a1dd1cf86b591cc12f8d3162325f1d#963595f494a1dd1cf86b591cc12f8d3162325f1d"
+source = "git+https://github.com/dev-chee/teal-lang.git?rev=ee70036f4bbf917ff686a3b77f551cea649315ad#ee70036f4bbf917ff686a3b77f551cea649315ad"
 dependencies = [
  "bincode",
  "crc32fast",
@@ -5329,7 +5329,7 @@ dependencies = [
 [[package]]
 name = "teal-runtime"
 version = "0.1.0"
-source = "git+https://github.com/dev-chee/teal-lang.git?rev=963595f494a1dd1cf86b591cc12f8d3162325f1d#963595f494a1dd1cf86b591cc12f8d3162325f1d"
+source = "git+https://github.com/dev-chee/teal-lang.git?rev=ee70036f4bbf917ff686a3b77f551cea649315ad#ee70036f4bbf917ff686a3b77f551cea649315ad"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -5367,7 +5367,7 @@ dependencies = [
 [[package]]
 name = "teal-security"
 version = "0.1.0"
-source = "git+https://github.com/dev-chee/teal-lang.git?rev=963595f494a1dd1cf86b591cc12f8d3162325f1d#963595f494a1dd1cf86b591cc12f8d3162325f1d"
+source = "git+https://github.com/dev-chee/teal-lang.git?rev=ee70036f4bbf917ff686a3b77f551cea649315ad#ee70036f4bbf917ff686a3b77f551cea649315ad"
 dependencies = [
  "clap",
  "reqwest",
@@ -5390,7 +5390,7 @@ dependencies = [
 [[package]]
 name = "teal-utils"
 version = "0.1.0"
-source = "git+https://github.com/dev-chee/teal-lang.git?rev=963595f494a1dd1cf86b591cc12f8d3162325f1d#963595f494a1dd1cf86b591cc12f8d3162325f1d"
+source = "git+https://github.com/dev-chee/teal-lang.git?rev=ee70036f4bbf917ff686a3b77f551cea649315ad#ee70036f4bbf917ff686a3b77f551cea649315ad"
 dependencies = [
  "image",
  "sha2 0.10.9",
@@ -5399,7 +5399,7 @@ dependencies = [
 [[package]]
 name = "teal-vm"
 version = "0.1.0"
-source = "git+https://github.com/dev-chee/teal-lang.git?rev=963595f494a1dd1cf86b591cc12f8d3162325f1d#963595f494a1dd1cf86b591cc12f8d3162325f1d"
+source = "git+https://github.com/dev-chee/teal-lang.git?rev=ee70036f4bbf917ff686a3b77f551cea649315ad#ee70036f4bbf917ff686a3b77f551cea649315ad"
 dependencies = [
  "bincode",
  "crc32fast",

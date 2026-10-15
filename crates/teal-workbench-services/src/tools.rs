@@ -1117,7 +1117,7 @@ impl WorkspaceTools {
     ) -> Result<(), HostError> {
         let expected_content_sha256 = match &kind {
             MutationKind::Write(_)
-            | MutationKind::WriteNew(_)
+            | MutationKind::WriteNew { .. }
             | MutationKind::Replace { .. }
             | MutationKind::ApplyPatch { .. } => Some(self.mutation_content_digest(&path)?),
             MutationKind::CreateDirectory | MutationKind::Move { .. } | MutationKind::Delete => {

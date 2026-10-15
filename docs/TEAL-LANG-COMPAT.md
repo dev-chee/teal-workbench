@@ -1,6 +1,6 @@
 # teal-lang 跨仓兼容矩阵
 
-工作台统一锁定语言提交 `963595f494a1dd1cf86b591cc12f8d3162325f1d`，Git 源为
+工作台统一锁定语言提交 `ee70036f4bbf917ff686a3b77f551cea649315ad`，Git 源为
 `https://github.com/dev-chee/teal-lang.git`。不保留旧 Rust 包兼容壳，也不提交跨仓 path 依赖。
 该提交尚未由本次任务推送；本地联调通过按命令设置 Git `insteadOf` 映射读取同一提交。
 
@@ -17,7 +17,7 @@
 | 工作台脚本清单 / runtime lock | 2 / 9；旧 profile 字段与旧层级值拒绝 |
 
 新运行在 prepare 之前解析并冻结模型绑定（包括压缩模型）；恢复使用已存绑定，不从当前配置重新选模型。
-默认 Agent 启动需要已配置的模型选择；模型调用仍由权限、联网模式与认证独立控制。
+默认 Agent 启动需要已配置的模型选择；未结束的运行拒绝模型切换，结束后下一次运行再冻结新选择。知识审核固定 `knowledge-review` 预设。模型调用仍由权限、联网模式与认证独立控制。
 
 `cargo xtask dist --language-root PATH` 要求语言 checkout 干净且 HEAD 等于锁定提交，
 从该 checkout 构建语言二进制并合并 std 包。工作台扩展包装继续使用 `std.bench.*`，

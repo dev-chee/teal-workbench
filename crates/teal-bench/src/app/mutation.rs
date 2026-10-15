@@ -782,12 +782,11 @@ fn execute_agent(
                 true,
             );
         }
-        MutationKind::WriteNew(text) => {
-            if std::fs::symlink_metadata(&path).is_ok() || buffers.find(&path).is_some() {
-                return Err("Knowledge publication target already exists".into());
+        MutationKind::WriteNew { text, target } => {
+            if target.path() != path {
+                return Err("workspace creation path differs from its prepared target".into());
             }
-            let text = mutation_text("", MutationKind::WriteNew(text))?;
-            return coordinator.create_new_text(buffers, &path, &text, true);
+            return coordinator.create_new_resolved(buffers, *target, &text);
         }
         MutationKind::Write(_) | MutationKind::Replace { .. } | MutationKind::ApplyPatch { .. } => {
         }
@@ -1007,6 +1006,55 @@ mod changed_line_tests {
         assert_eq!(
             changed_line_ranges("one\ntwo\nthree\n", "one\nthree\n"),
             vec![1..2]
+        );
+    }
+}
+
+#[cfg(test)]
+mod creation_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    struct Audit;
+    impl teal_security::AuditSink for Audit {
+        fn append(
+            &self,
+            _: &teal_security::Event,
+        ) -> Result<teal_security::Receipt, teal_security::AuditError> {
+            Ok(teal_security::Receipt {
+                sequence: 1,
+                hash: format!("{:064x}", 1),
+            })
+        }
+    }
+
+    #[test]
+    fn prepared_creation_preserves_receipt_bytes_and_rejects_reuse() {
+        let root = tempfile::tempdir().unwrap();
+        let coordinator =
+            WorkspaceMutationCoordinator::new(root.path().into(), root.path().join("checkpoints"))
+                .unwrap()
+                .with_audit_context(teal_security::AuditContext::new(Arc::new(Audit)));
+        let path = root.path().join("nested/note.md");
+        let text = "first\r\nsecond\rthird";
+        let kind = MutationKind::WriteNew {
+            text: text.into(),
+            target: Box::new(coordinator.resolve_write(&path, true).unwrap()),
+        };
+        let buffers = teal_workbench_core::BufferStore::default();
+        execute_agent(
+            &coordinator,
+            &buffers,
+            root.path(),
+            path.clone(),
+            kind.clone(),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), text.as_bytes());
+        assert!(
+            execute_agent(&coordinator, &buffers, root.path(), path, kind, None, None).is_err()
         );
     }
 }

@@ -9,6 +9,7 @@ pub enum ReviewDecision {
     needs_evidence { proposal_id: string, source_digest: string, reason: string },
 }
 
+@model("knowledge-review")
 agent KnowledgeReviewer {}
 
 impl KnowledgeReviewer {

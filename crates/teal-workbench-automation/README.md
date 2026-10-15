@@ -8,6 +8,8 @@ Teal 工作台中受能力约束的配置、文法和自动化宿主：把 `teal
 
 持久的工作台 Agent 自动化通过 `teal-runtime` 的 `prepare_execution`、`PreparedExecution::bind_with_access` 和 `PersistentExecution::execute_step` 装配；交互与外部对账继续使用同一持久执行对象，不直接创建第二套 Agent 运行账本。automation 编译入口显式允许 Core、Native、FFI、Agent 和 Workbench domains，LSP 的 unrestricted catalog 读取不属于执行入口。
 
+知识审核源码通过 `@model("knowledge-review")` 固定用户层审核预设，不依赖默认聊天模型。工作台知识发布回调接收批准前固定的路径证明，并由共享事务最终复核。
+
 ## 实现细节
 
 ### Teal 工作台实现

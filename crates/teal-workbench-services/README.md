@@ -6,6 +6,8 @@ Teal 工作台的文件系统、惰性文件树、搜索、Markdown、进程、�
 
 `HeadlessWorkspaceTools` 使 CLI 与 Rust 宿主复用工作区工具和版本化事务，无需 Bench；`WorkspaceProgramDigest` 复核当前入口及导入闭包，`VerifiedCommitService` 重查真实模型收据、批准与文件后以隔离 Git index 提交精确交付路径。
 
+新建文件事务允许目标及父目录尚不存在。`WorkspaceToolRuntime::create_new_prepared` 接收批准前取得的 `ResolvedTarget`，将同一份路径证明随 `WriteNew` 传至 Bench 或无界面执行端；队列等待期间父目录被替换会拒绝写入，最终仍按无覆盖规则提交。
+
 本 README 后续章节说明包边界。
 
 ## 实现细节

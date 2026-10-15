@@ -535,7 +535,7 @@ impl App {
                         let status = teal_workbench_automation::process_knowledge_proposal(
                             proposals.as_ref(), &id, &workspace, &root,
                             Some(knowledge.as_ref()), permissions.as_ref(),
-                            teal_workbench_automation::KnowledgePublicationWriter::Workspace(tools.as_ref()),
+                            teal_workbench_automation::KnowledgePublicationWriter::Workspace(&|target, text| tools.create_new_prepared(target, text)),
                             teal_security::process_context(),
                         ).await?;
                         if status == teal_knowledge::ProposalStatus::Published {

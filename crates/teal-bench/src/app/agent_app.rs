@@ -71,9 +71,55 @@ impl teal_agent::WorkspaceBaselineProvider for BenchWorkspaceBaseline {
     }
 }
 
+// 绑定在 prepare_execution 时冻结；等待输入或重启界面都不代表运行已结束。
+fn ensure_no_frozen_source_run(workspace: &std::path::Path) -> Result<(), String> {
+    let store = match teal_agent::RuntimeStore::connect(workspace) {
+        Ok(store) => store,
+        Err(teal_agent::RuntimeStoreError::Io(error))
+            if error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            return Ok(());
+        }
+        Err(error) => {
+            return Err(format!(
+                "Cannot verify source Agent model bindings: {error}"
+            ));
+        }
+    };
+    for run in store.runs().map_err(|error| error.to_string())? {
+        if run.origin == teal_agent::RunOrigin::Program
+            && matches!(
+                run.state,
+                teal_agent::RunState::Running | teal_agent::RunState::NeedsAttention
+            )
+            && store
+                .checkpoint(&run.id, "agent-app-identity")
+                .map_err(|error| error.to_string())?
+                .is_some()
+        {
+            return Err(format!(
+                "Model bindings are frozen for unfinished source Agent run `{}`. Finish or explicitly recover that run before selecting a model for a new run.",
+                run.id
+            ));
+        }
+    }
+    Ok(())
+}
+
 impl App {
+    pub(super) fn ensure_model_selection_available(&self) -> Result<(), String> {
+        if self.agent_app_tx.is_some() || self.agent_app_services.is_some() {
+            return Err("Model bindings are frozen for the active source Agent run. Finish it with :quit before selecting a model for a new run.".into());
+        }
+        ensure_no_frozen_source_run(&self.workspace)
+    }
+
     /// 把输入交给同一持久源码程序；Bench 不解释 Agent 命令或流程阶段。
     pub(super) fn submit_source_agent_input(&mut self, input: String) {
+        if input.split_whitespace().next() == Some(":model") {
+            self.message(Severity::Warning, "agent", "Use the model picker before starting a new run. Model bindings cannot be changed inside a source Agent run.");
+            return;
+        }
         if self.safe_mode {
             self.message(
                 Severity::Warning,
@@ -658,7 +704,7 @@ async fn drive_default_agent(
                                 None,
                                 review_permissions.as_ref(),
                                 teal_workbench_automation::KnowledgePublicationWriter::Workspace(
-                                    tools.as_ref(),
+                                    &|target, text| tools.create_new_prepared(target, text),
                                 ),
                                 teal_security::process_context(),
                             )
@@ -798,6 +844,7 @@ protocol = "chat_completions"
 local = true
 [providers.local-test.auth_profiles.default]
 [providers.local-test.models.test]
+[providers.local-test.models.other]
 "#,
         )
         .unwrap();
@@ -836,6 +883,54 @@ local = true
             false,
         )
         .await
+    }
+
+    #[tokio::test]
+    async fn direct_model_command_preserves_the_frozen_run_and_configuration() {
+        let _ = teal_security::install_process_sink(Arc::new(AuditSink));
+        let root = tempfile::tempdir().unwrap();
+        let _home_guard = crate::app::test_support::TestHomeGuard::set(&root.path().join("home"));
+        let (tools, permissions, memory, access) = source_test_dependencies(root.path());
+        let config_path = root.path().join("test-model-config/model.toml");
+        let before = std::fs::read(&config_path).unwrap();
+        let (sender, receiver) = mpsc::channel(8);
+        sender
+            .send(AgentAppInput::Text(":model other/model".into()))
+            .await
+            .unwrap();
+        sender
+            .send(AgentAppInput::Text(":quit".into()))
+            .await
+            .unwrap();
+        let (events, mut output) = mpsc::channel(256);
+        drive_default_agent(
+            "default".into(),
+            root.path().into(),
+            PathBuf::new(),
+            access,
+            tools,
+            permissions,
+            memory,
+            Vec::new(),
+            receiver,
+            crate::runtime_bridge::RuntimeSender::new(events),
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(std::fs::read(config_path).unwrap(), before);
+        let mut refused = false;
+        while let Ok(RuntimeEvent::Observed { event, .. }) = output.try_recv() {
+            if let RuntimeEvent::AgentAppEvent(teal_agent::RuntimeAgentEvent {
+                event: teal_agent::AgentEvent::Application { payload, .. },
+                ..
+            }) = *event
+            {
+                refused |= payload.contains("Model bindings are frozen");
+            }
+        }
+        assert!(refused);
+        assert!(ensure_no_frozen_source_run(root.path()).is_ok());
     }
 
     #[tokio::test]
@@ -1072,6 +1167,11 @@ local = true
         let store = Arc::new(teal_agent::RuntimeStore::open(root.path()).unwrap());
         let before = store.runs().unwrap();
         assert_eq!(before.len(), 1);
+        assert!(
+            ensure_no_frozen_source_run(root.path())
+                .unwrap_err()
+                .contains("frozen")
+        );
         let (next_input_tx, next_input) = mpsc::channel(8);
         next_input_tx
             .send(AgentAppInput::Text(":quit".into()))
@@ -1101,6 +1201,7 @@ local = true
         assert_eq!(after.len(), 1);
         assert_eq!(after[0].id, before[0].id);
         assert_eq!(after[0].state, teal_agent::RunState::Completed);
+        assert!(ensure_no_frozen_source_run(root.path()).is_ok());
 
         let (other_input_tx, other_input) = mpsc::channel(8);
         other_input_tx
@@ -1399,6 +1500,11 @@ local = true
         .unwrap_err();
         assert!(error.contains("prepared source Agent run") && error.contains("not started"));
         assert_eq!(store.runs().unwrap().len(), 1);
+        assert!(
+            ensure_no_frozen_source_run(root.path())
+                .unwrap_err()
+                .contains("frozen")
+        );
     }
 
     #[tokio::test]
@@ -1430,6 +1536,45 @@ local = true
         app.submit_source_agent_input("should not start".into());
         assert!(app.agent_app_tx.is_none());
         assert!(app.agent_app_services.is_none());
+        assert!(!root.path().join(".teal/runtime/agent.sqlite3").exists());
+        app.safe_mode = false;
+        app.model_access = test_model_access(root.path());
+        let config_path = root.path().join("test-model-config/model.toml");
+        let before = std::fs::read(&config_path).unwrap();
+        assert!(app.ensure_model_selection_available().is_ok());
+        app.submit_source_agent_input(":model other/model".into());
+        assert!(app.agent_app_tx.is_none());
+        assert!(!root.path().join(".teal/runtime/agent.sqlite3").exists());
+        let (sender, mut receiver) = mpsc::channel(8);
+        app.agent_app_tx = Some(sender);
+        app.setup_agent(&[
+            "local-test".into(),
+            "default".into(),
+            "other".into(),
+            "test".into(),
+        ]);
+        app.submit_source_agent_input(":model other/model".into());
+        assert!(receiver.try_recv().is_err());
+        assert_eq!(std::fs::read(&config_path).unwrap(), before);
+        app.agent_app_tx = None;
+        app.setup_agent(&[
+            "local-test".into(),
+            "default".into(),
+            "other".into(),
+            "other".into(),
+        ]);
+        assert_ne!(std::fs::read(config_path).unwrap(), before);
+        assert_eq!(
+            app.model_access
+                .configuration()
+                .unwrap()
+                .document
+                .default
+                .unwrap()
+                .to_string(),
+            "other"
+        );
+        assert!(app.agent_app_tx.is_none());
         assert!(!root.path().join(".teal/runtime/agent.sqlite3").exists());
         app.tasks.shutdown().await;
     }
