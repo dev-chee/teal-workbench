@@ -5,7 +5,7 @@ _teal() {
 
     case "$command" in
         compile)
-            options="options profiles lints --code --format --tier --optimization --debug --no-debug --debug-info --no-debug-info --allow --warn --deny --forbid --otel-traces --otel-metrics --otel-endpoint --trace-functions"
+            options="options tiers lints help --code --locked --tier --build-profile --optimization --debug --no-debug --debug-info --no-debug-info --deny --format --help --version"
             ;;
         run)
             options="--code --bindings --tier --optimization --debug --no-debug --debug-info --no-debug-info --allow --warn --deny --forbid --permission-preset --interaction --permission-file --otel-traces --otel-metrics --otel-endpoint --trace-functions --otel-profiles --otel-profiles-endpoint --profile --profile-interval-ms"
